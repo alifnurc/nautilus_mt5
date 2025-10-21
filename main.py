@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 
-from decimal import Decimal
-from pathlib import Path
-
 import pandas as pd
 import zipfile
 import requests
 
+from decimal import Decimal
+from pathlib import Path
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig, LoggingConfig
-from nautilus_trader.examples.strategies.ema_cross import EMACross, EMACrossConfig
-from nautilus_trader.model import Bar, BarType, Money, TraderId, Venue
-from nautilus_trader.model.enums import AccountType, OmsType
+from nautilus_trader.data.aggregation import ValueBarAggregator
+from nautilus_trader.model import BarType, Money, TraderId, Venue
+from nautilus_trader.model.enums import AccountType, OmsType, BarAggregation, PriceType
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.persistence.wranglers import BarDataWrangler
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.examples.strategies.ema_cross import EMACross, EMACrossConfig
 
 
 def download(url: str) -> None:
@@ -28,7 +29,7 @@ if __name__ == "__main__":
     # Step 1: Configure and create backtest engine
     engine_config = BacktestEngineConfig(
         trader_id=TraderId("BACKTEST_TRADER-001"),
-        logging=LoggingConfig(log_level="DEBUG"),
+        logging=LoggingConfig(log_level="INFO"),
     )
     engine = BacktestEngine(config=engine_config)
 
@@ -59,41 +60,45 @@ if __name__ == "__main__":
 
     # Step 4a: Load bar data from CSV file -> into pandas DataFrame
     csv_file_path = r"Exness_EURUSDc_2025_09.csv"
-    df = pd.read_csv(csv_file_path, sep=",", decimal=".", header=0, index_col=False)
+    df = pd.read_csv(
+        csv_file_path,
+        index_col=False,
+        header=0,
+        sep=",",
+        decimal=".",
+        names=["Exness", "Symbol", "Timestamp", "Bid", "Ask"],
+        usecols=["Timestamp", "Bid", "Ask"],
+        na_values=["", "NULL", "NaN", "N/A"],
+    )
 
-    # Step 4b: Restructure DataFrame into required structure, that can be bassed `BarDataWrangler`
-    #   -   5 columns: 'open', 'high', 'low', 'close', 'volume'
-    #   -   'timestamp' as index
-
+    # Step 4b: Restructur DataFrame into required structure
     # Convert string timestamps into datetime
     df["Timestamp"] = pd.to_datetime(df["Timestamp"], format="ISO8601")
-    # Seet column `timestamp` as index
-    df = df.set_index("Timestamp")
-    # MID price for OHLC
-    df["Mid"] = (df["Bid"] + df["Ask"]) / 2
-
-    ohlc_df = (
-        df["Mid"]
-        .resample("15min")
-        .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+    # Rename column to required name
+    df = df.rename(
+        columns={"Timestamp": "timestamp", "Bid": "bid_price", "Ask": "ask_price"}
     )
-    # Add volume
-    ohlc_df["volume"] = df.resample("15min").size()
+    # Seet column `Timestamp` as index
+    df = df.set_index("timestamp")
 
-    # Remove volume = 0 (no data tick in that periode)
-    ohlc_df_clean = ohlc_df[ohlc_df["volume"] > 0].copy()
+    # Step 4c: Process quotes using a wrangler
+    wrangler = QuoteTickDataWrangler(instrument=EURUSD_INSTRUMENT)
+    ticks = wrangler.process(df)
 
-    # Step 4c: Define type of loaded bars
-    EURUSD_15MIN_BARTYPE = BarType.from_str(
-        f"{EURUSD_INSTRUMENT.id}-15-MINUTE-MID-EXTERNAL",
+    handler = []
+    bar_spec = BarSpecification(15, BarAggregation.MINUTE, PriceType.BID)
+    bar_type = BarType(EURUSD_INSTRUMENT.id, bar_spec)
+    aggregator = ValueBarAggregator(
+        EURUSD_INSTRUMENT,
+        bar_type,
+        handler.append,
     )
 
-    # Step 4d: `BarDataWrangler` converts each row object of type `Bar`
-    wrangler = BarDataWrangler(EURUSD_15MIN_BARTYPE, EURUSD_INSTRUMENT)
-    eurusdc_15min_bars_list: list[Bar] = wrangler.process(ohlc_df_clean)
+    for tick in ticks:
+        aggregator.handle_quote_tick(tick)
 
-    # Step 4e: Add loaded data to the engine
-    engine.add_data(eurusdc_15min_bars_list)
+    # Step 4d: Add loaded data to the engine
+    engine.add_data(aggregator)
 
     # Step 5: Create strategy and add it to engine
     config = EMACrossConfig(
@@ -109,11 +114,6 @@ if __name__ == "__main__":
 
     # Step 6: Run engine = Run backtest
     engine.run()
-
-    # Generating reports
-    engine.trader.generate_account_report(EXNESS)
-    engine.trader.generate_order_fills_report()
-    engine.trader.generate_positions_report()
 
     # Step 7: Release system resources
     engine.dispose()
