@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  nautilus-trader:
+    build: .
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app/src
+    command: python src/main.py
