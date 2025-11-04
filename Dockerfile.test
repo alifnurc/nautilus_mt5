@@ -1,0 +1,14 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get upgrade -y --no-install-recommends
+
+COPY requirements.txt requirements-test.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt -r requirements-test.txt
+
+COPY src .
+COPY tests .
+COPY pytest.ini .
+
+RUN mkdir -p reports

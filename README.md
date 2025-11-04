@@ -30,7 +30,7 @@ QuantNautilus
 
 ## Prerequisites
 
-- Docker or Podman
+- Docker
 
 ## Running with container
 
@@ -38,14 +38,6 @@ QuantNautilus
 
 ```bash
 docker-compose up --build
-```
-
-OR
-
-- Podman
-
-```bash
-podman-compose up --build
 ```
 
 ## Running without container
@@ -72,4 +64,26 @@ pip install -r requirements.txt
 
 ```bash
 python3 src/main.py
+```
+
+## Testing strategy
+
+### Running tests
+
+- Full test suite
+
+```bash
+docker-compose -f docker-compose.test.yml up test
+```
+
+- Quick unit tests only
+
+```bash
+docker-compose run test pytest tests/unit/ -m fast
+```
+
+- With coverage report
+
+```bash
+docker-compose run test pytest --cov=src --cov-report=html
 ```
