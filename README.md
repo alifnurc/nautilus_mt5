@@ -32,21 +32,44 @@ QuantNautilus
 
 - Docker or Podman
 
-## Running with Docker or Podman
+## Running with container
+
+- Docker
 
 ```bash
 docker-compose up --build
+```
 
-# or
+OR
 
+- Podman
+
+```bash
 podman-compose up --build
 ```
 
-## Running without Docker and Podman
+## Running without container
+
+1. Clone this repository
 
 ```bash
-git clone <this repo>
+git clone <this repository>
+```
+
+2. Navigate to the project directory
+
+```bash
 cd <this repo>
+```
+
+3. Install the required Python packages
+
+```bash
 pip install -r requirements.txt
+```
+
+4. Run the backtest
+
+```bash
 python3 src/main.py
 ```
