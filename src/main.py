@@ -61,7 +61,7 @@ if __name__ == "__main__":
     EXNESS = Venue("exness")
     engine.add_venue(
         venue=EXNESS,
-        oms_type=OmsType.NETTING,
+        oms_type=OmsType.HEDGING,
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000, USD)],
         base_currency=USD,
@@ -86,11 +86,9 @@ if __name__ == "__main__":
     df["Timestamp"] = pd.to_datetime(df["Timestamp"], format="ISO8601")
     # Seet column `timestamp` as index
     df = df.set_index("Timestamp")
-    # MID price for OHLC
-    df["Mid"] = (df["Bid"] + df["Ask"]) / 2
 
     ohlc_df = (
-        df["Mid"]
+        df["Bid"]
         .resample("15min")
         .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
     )
@@ -102,7 +100,7 @@ if __name__ == "__main__":
 
     # Step 6c: Define type of loaded bars
     EURUSD_15MIN_BARTYPE = BarType.from_str(
-        f"{EURUSD_INSTRUMENT.id}-15-MINUTE-MID-EXTERNAL",
+        f"{EURUSD_INSTRUMENT.id}-15-MINUTE-BID-EXTERNAL",
     )
 
     # Step 6d: `BarDataWrangler` converts each row object of type `Bar`
@@ -115,7 +113,7 @@ if __name__ == "__main__":
     # Step 7: Create strategy and add it to engine
     config = EMACrossConfig(
         instrument_id=EURUSD_INSTRUMENT.id,
-        bar_type=BarType.from_str(f"{EURUSD_INSTRUMENT.id}-15-MINUTE-MID-EXTERNAL"),
+        bar_type=BarType.from_str(f"{EURUSD_INSTRUMENT.id}-15-MINUTE-BID-EXTERNAL"),
         fast_ema_period=10,
         slow_ema_period=20,
         trade_size=Decimal(10_000),
