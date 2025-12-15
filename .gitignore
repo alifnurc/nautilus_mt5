@@ -3,3 +3,4 @@ data
 reports
 .env
 *.exe
+__pycache__
