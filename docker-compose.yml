@@ -13,6 +13,8 @@ services:
       context: .
       dockerfile: mt5.dockerfile
     ports:
+      - "50319:50319"
+      - "60832:60832"
       - "18847:18847"
     environment:
       - MT5_ACCOUNT=${MT5_ACCOUNT}
@@ -20,7 +22,7 @@ services:
       - MT5_SERVER=${MT5_SERVER}
     restart: "no"
     tty: true
-    command: bash ./setup.sh
+    command: bash config/setup.sh
 #   live:
 #     build:
 #       context: .
