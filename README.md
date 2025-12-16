@@ -65,25 +65,3 @@ pip install -r requirements.txt
 ```bash
 python3 src/main.py
 ```
-
-## Testing strategy
-
-### Running tests
-
-- Full test suite
-
-```bash
-docker-compose -f docker-compose.test.yml up test
-```
-
-- Quick unit tests only
-
-```bash
-docker-compose run test pytest tests/unit/ -m fast
-```
-
-- With coverage report
-
-```bash
-docker-compose run test pytest --cov=src --cov-report=html
-```
