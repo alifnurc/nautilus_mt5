@@ -5,3 +5,4 @@ reports
 *.exe
 __pycache__
 config/passwd
+.mt5

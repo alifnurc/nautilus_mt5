@@ -1,0 +1,7 @@
+.venv
+.mt5
+.git
+.github
+*.MD
+__pycache__
+data

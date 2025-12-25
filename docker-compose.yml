@@ -1,13 +1,15 @@
 services:
   backtest:
-    build: .
+    build:
+      context: .
+      dockerfile: backtest.dockerfile
     volumes:
       - ./src:/app/src
       - ./data:/app/data
     working_dir: /app
     environment:
       - PYTHONPATH=/app/src
-    command: python src/main.py
+    command: python src/backtest.py
   mt5-wine:
     build:
       context: .
@@ -16,32 +18,6 @@ services:
       - "50319:50319"
       - "60832:60832"
       - "18847:18847"
-    environment:
-      - MT5_ACCOUNT=${MT5_ACCOUNT}
-      - MT5_PASSWORD=${MT5_PASSWORD}
-      - MT5_SERVER=${MT5_SERVER}
     restart: "no"
     tty: true
     command: bash config/setup.sh
-#   live:
-#     build:
-#       context: .
-#       dockerfile: tmp
-#     container_name: live-trading
-#     depends_on:
-#       - mt5-wine
-#     environment:
-#       - MT5_ACCOUNT=${MT5_ACCOUNT}
-#       - MT5_PASSWORD=${MT5_PASSWORD}
-#       - MT5_SERVER=${MT5_SERVER}
-#       - MT5_RPYC_HOST=mt5-wine
-#       - MT5_RPYC_PORT=18847
-#     volumes:
-#       - ./src:/app/src
-#       - ./data:/app/data
-#     networks:
-#       - trading-network
-#     command: python src/live.py
-# networks:
-#   trading-network:
-#     driver: bridge
