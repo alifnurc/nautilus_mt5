@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from decimal import Decimal
-from adapters.mt5 import MT5, MT5DataClientConfig, MT5LiveDataClientFactory
+from adapters.mt5 import MT5, MT5ClientConfig, MT5LiveDataClientFactory
 from nautilus_trader.config import (
     LiveExecEngineConfig,
     LoggingConfig,
@@ -25,7 +25,7 @@ config_node = TradingNodeConfig(
         reconciliation=False,
     ),
     data_clients={
-        MT5: MT5DataClientConfig(
+        MT5: MT5ClientConfig(
             account_number=os.getenv("MT5_ACCOUNT"),
             password=os.getenv("MT5_PASSWORD"),
             server=os.getenv("MT5_SERVER"),

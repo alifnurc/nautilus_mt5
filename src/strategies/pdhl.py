@@ -1,9 +1,10 @@
 from decimal import Decimal
 
+from nautilus_trader.core.nautilus_pyo3 import LogColor
 import pandas as pd
 
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model import BarType, InstrumentId
+from nautilus_trader.model import Bar, BarType, InstrumentId
 from nautilus_trader.model.enums import OrderSide, TimeInForce
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orders import LimitOrder
@@ -24,8 +25,6 @@ class PDHLConfig(StrategyConfig, frozen=True):
         The position size per trade.
     subscribe_quote_ticks: bool, [default=False]
         If quotes should be subscribed to.
-    request_bars: bool, [default=True]
-        If historical bars should be requested on strategy start.
     order_time_in_force: TimeInForce, [default=TimeInForce.DAY]
         The time in force for strategy market orders.
     close_position_on_stop: bool, [default=False]
@@ -36,7 +35,6 @@ class PDHLConfig(StrategyConfig, frozen=True):
     bar_type: BarType
     trade_size: Decimal
     subscribe_quote_ticks: bool = False
-    request_bars: bool = True
     order_time_in_force: TimeInForce = TimeInForce.DAY
     close_position_on_stop: bool = False
 
@@ -53,6 +51,8 @@ class PDHL(Strategy):
 
         self.instument: Instrument = None
 
+    # Stateful Actions
+
     def on_start(self) -> None:
         """
         Actions to be performed on strategy start.
@@ -64,16 +64,9 @@ class PDHL(Strategy):
             return
 
         # Get historical data
-        if self.config.request_bars:
-            self.request_bars(
-                self.config.bar_type, start=self._clock.utc_now() - pd.Timedelta(days=1)
-            )
 
         # Subscribe to real-time data
         self.subscribe_bars(self.config.bar_type)
-
-        if self.config.subscribe_quote_ticks:
-            self.subscribe_quote_ticks(self.config.instrument_id)
 
     def on_stop(self) -> None:
         """
@@ -84,6 +77,15 @@ class PDHL(Strategy):
 
         if self.config.unsubscribe_data_on_stop and self.config.subscribe_quote_ticks:
             self.unsubscribe_quote_ticks(self.config.instrument_id)
+
+    # Data Handling
+
+    def on_bar(self, bar: Bar) -> None:
+        self.log.info(repr(bar), LogColor.CYAN)
+
+    # Order Management
+
+    # Submitting Orders
 
     def buy(self) -> None:
         order: LimitOrder = self.order_factory.limit(
@@ -108,6 +110,10 @@ class PDHL(Strategy):
         )
 
         self.submit_order(order)
+
+    # Position Management
+
+    # Important Level ICT
 
     def _pdh(self) -> None:
         pass

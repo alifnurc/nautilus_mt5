@@ -84,10 +84,10 @@ class MT5InstrumentProvider(InstrumentProvider):
             print(f"Error creating instrument {symbol_obj.name}: {e}")
             return None
 
-    def get(self, instrument_id: InstrumentId) -> Optional[nautilus_pyo3.Instrument]:
+    def get(self, instrument_id: InstrumentId) -> Optional[nautilus_pyo3.InstrumentId]:
         return self._instruments.get(instrument_id)
 
-    def list_all(self) -> List[nautilus_pyo3.Instrument]:
+    def list_all(self) -> List[nautilus_pyo3.InstrumentId]:
         return list(self._instruments.values())
 
     def list_symbols(self) -> List[str]:
