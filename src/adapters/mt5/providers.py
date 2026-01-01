@@ -1,13 +1,14 @@
-from decimal import Decimal
-from typing import List, Optional
+from typing import Any, List
+
+from nautilus_trader.config import InstrumentProviderConfig
 
 from adapters.mt5.constants import MT5_VENUE
 from adapters.mt5.client import AsyncMT5RPyCClient
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
-from pymt5linux import MetaTrader5
+from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
 class MT5InstrumentProvider(InstrumentProvider):
@@ -33,62 +34,56 @@ class MT5InstrumentProvider(InstrumentProvider):
         super().__init__(config=config)
         self._client = client
         self._active_only = active_only
-        self._instruments = list[nautilus_pyo3.Instrument] = []
-        self._loaded = False
+        self._log_warnings = config.log_warnings if config else True
+        self._instruments_pyo3: list[nautilus_pyo3.Instrument] = []
 
-    async def _load_all(self) -> None:
-        try:
-            symbols = await MetaTrader5.symbols_get()
+    @property
+    def active_only(self) -> bool:
+        return self._active_only
 
-            for symbol_obj in symbols:
-                instrument = await self._create_instrument(symbol_obj)
-                if instrument:
-                    self._instruments[instrument.id] = instrument
+    def instruments_pyo3(self) -> List[Any]:
+        return self._instruments_pyo3
 
-            self._loaded = True
-        except Exception as e:
-            print(f"Error loading instruments: {e}")
+    async def load_all_async(self, filters: dict | None = None) -> None:
+        filters_str = "..." if not filters else f"with filters {filters}..."
+        self._log.info(f"Loading all instruments{filters_str}")
 
-    async def _create_instrument(self, symbol_obj):
-        try:
-            symbol = symbol_obj.name
-            symbol_info = await MetaTrader5.symbol_info(symbol)
-            if not symbol_info:
-                return None
+        pyo3_instruments = await self._client.request_instruments(
+            self._active_only,
+        )
 
-            # Parse to Nautilus format
-            instrument_id = InstrumentId(
-                symbol=nautilus_pyo3.Symbol(symbol), venue=MT5_VENUE
+        self._instruments_pyo3 = pyo3_instruments
+        instruments = instruments_from_pyo3(pyo3_instruments)
+        for instrument in instruments:
+            self.add(instrument=instrument)
+
+    async def load_ids_async(
+        self, instrument_ids: list[InstrumentId], filters: dict | None = None
+    ) -> None:
+        if not instrument_ids:
+            self._log.warning("No instrument IDs given for loading")
+            return
+
+        # Check all instrument IDs
+        for instrument_id in instrument_ids:
+            PyCondition.equal(
+                instrument_id.venue, MT5_VENUE, "instrument_id.venue", "MT5"
             )
 
-            # Create instrument
-            instrument = nautilus_pyo3.Instrument(
-                id=instrument_id,
-                asset_class=nautilus_pyo3.AssetClass.FX,
-                base_currency=nautilus_pyo3.Currency.from_str(symbol[:3]),
-                quote_currency=nautilus_pyo3.Currency.from_str(symbol[:3]),
-                price_precision=symbol_info.digits,
-                size_precision=2,
-                lot_size=nautilus_pyo3.Quantity.from_str(str(symbol_info.volume_step)),
-                min_quantity=nautilus_pyo3.Quantity.from_str(
-                    str(symbol_info.volume_min)
-                ),
-                max_quantity=nautilus_pyo3.Quantity.from_str(
-                    str(symbol_info.volume_max)
-                ),
-                margin_init=Decimal(str(symbol_info.margin_initial)),
-                margin_maint=Decimal(str(symbol_info.margin_maintenance)),
-            )
-            return instrument
-        except Exception as e:
-            print(f"Error creating instrument {symbol_obj.name}: {e}")
-            return None
+        pyo3_instruments = await self._client.request_instruments(
+            self._active_only,
+        )
 
-    def get(self, instrument_id: InstrumentId) -> Optional[nautilus_pyo3.InstrumentId]:
-        return self._instruments.get(instrument_id)
+        self._instruments_pyo3 = pyo3_instruments
+        instruments = instruments_from_pyo3(pyo3_instruments)
 
-    def list_all(self) -> List[nautilus_pyo3.InstrumentId]:
-        return list(self._instruments.values())
+        for instrument in instruments:
+            if instrument.id not in instrument_ids:
+                continue
+            self.add(instrument=instrument)
 
-    def list_symbols(self) -> List[str]:
-        return [inst.id.symbol.value for inst in self._instruments.values()]
+    async def load_async(
+        self, instrument_id: InstrumentId, filters: dict | None = None
+    ) -> None:
+        PyCondition.not_none(instrument_id, "instrument_id")
+        await self.load_ids_async([instrument_id], filters)
