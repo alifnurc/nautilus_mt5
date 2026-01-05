@@ -26,12 +26,12 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         MT5: MT5ClientConfig(
-            account_number=os.getenv("MT5_ACCOUNT"),
-            password=os.getenv("MT5_PASSWORD"),
-            server=os.getenv("MT5_SERVER"),
+            account_number=int(os.getenv("MT5_ACCOUNT")),
+            password=str(os.getenv("MT5_PASSWORD")),
+            server=str(os.getenv("MT5_SERVER")),
             timeout=120000,
-            rpyc_host=os.getenv("MT5_RPYC_HOST"),
-            rpyc_port=os.getenv("MT5_RPYC_PORT"),
+            rpyc_host=str(os.getenv("MT5_RPYC_HOST")),
+            rpyc_port=int(os.getenv("MT5_RPYC_PORT")),
         )
     },
 )

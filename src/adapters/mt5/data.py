@@ -63,8 +63,8 @@ class MT5DataClient(LiveMarketDataClient):
         )
 
         # Configuration
-        self.client = client
-        self.config = config
+        self._client = AsyncMT5RPyCClient(config)  # I don't have any ideas about this
+        self._config = config
         self._connected = False
         self._subscriptions: Set[InstrumentId] = set()
         self._instuments_loaded = False
@@ -82,16 +82,9 @@ class MT5DataClient(LiveMarketDataClient):
     async def _connect(self) -> None:
         try:
             # Connect client
-            self.log.info("Connecting to MT5 Data Client...")
+            self._log.info("Connecting to MT5 Data Client...")
 
-            success = await self.client.connect(
-                self.config.account_number,
-                self.config.password,
-                self.config.server,
-                self.config.timeout,
-                self.config.rpyc_host,
-                self.config.rpyc_port,
-            )
+            success = await self._client.connect()
             if not success:
                 raise ConnectionError("Failed to connect to MT5 via RPyC")
 
@@ -102,23 +95,23 @@ class MT5DataClient(LiveMarketDataClient):
             for instrument in self._instrument_provider.list_all():
                 self._handle_data(instrument)
 
-            self.log.info("MT5 Data Client connected successfully")
+            self._log.info("MT5 Data Client connected successfully")
         except Exception as e:
-            self.log.error(f"Failed to connect: {e}")
+            self._log.error(f"Failed to connect: {e}")
             raise
 
     async def _disconnect(self) -> None:
-        await self.client.disconnect()
+        await self._client.disconnect()
         self._connected = False
-        self.log.info("MT5 Data Client disconnected")
+        self._log.info("MT5 Data Client disconnected")
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
-        await self.client.subscribe_bars(pyo3_bar_type)
+        await self._client.subscribe_bars(pyo3_bar_type)
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
-        await self.client.unsubscribe_bars(pyo3_bar_type)
+        await self._client.unsubscribe_bars(pyo3_bar_type)
 
     async def _request_bars(self, request: RequestBars) -> None:
         bar_type = request.bar_type
@@ -127,7 +120,7 @@ class MT5DataClient(LiveMarketDataClient):
             bar_type.is_internally_aggregated()
             or bar_type.aggregation_source != AggregationSource.EXTERNAL
         ):
-            self.log.error(
+            self._log.error(
                 f"Cannot request {bar_type} bars: MT5 only provides EXTERNAL aggregation",
             )
             return
@@ -139,14 +132,14 @@ class MT5DataClient(LiveMarketDataClient):
             or (spec.aggregation == BarAggregation.DAY and spec.step == 1)
         )
         if not supported:
-            self.log.error(
+            self._log.error(
                 f"Cannot request {bar_type} bars: unsupported MT5 specification",
             )
             return
 
         limit = request.limit or None
         if limit is not None and limit > 1000:
-            self.log.warning(
+            self._log.warning(
                 f"MT5 bar limit {limit} exceeds maximum of 1000, clamping",
             )
             limit = 1000
@@ -161,7 +154,7 @@ class MT5DataClient(LiveMarketDataClient):
         end = ensure_pydatetime_utc(request.end) if request.end else None
 
         try:
-            pyo3_bars = await self.client.request_bars(
+            pyo3_bars = await self._client.request_bars(
                 bar_type=pyo3_bar_type,
                 start=start,
                 end=end,
@@ -169,7 +162,7 @@ class MT5DataClient(LiveMarketDataClient):
                 partial=partial,
             )
         except Exception as e:  # pragma: no cover - network failures
-            self.log.exception(f"Failed to request bars for {bar_type}", e)
+            self._log.exception(f"Failed to request bars for {bar_type}", e)
             return
 
         bars = Bar.from_pyo3_list(pyo3_bars)

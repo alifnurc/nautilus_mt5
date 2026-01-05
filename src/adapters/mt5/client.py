@@ -1,7 +1,6 @@
 import asyncio
 import threading
 import time
-from nautilus_trader.core import nautilus_pyo3
 import pandas as pd
 from typing import Callable
 
@@ -10,6 +9,8 @@ from pymt5linux import MetaTrader5, rpyc
 from adapters.mt5.config import MT5ClientConfig
 from nautilus_trader.common.component import Logger
 from nautilus_trader.model import BarType
+from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core import nautilus_pyo3
 
 from adapters.mt5.constants import MT5_VENUE
 
@@ -19,42 +20,48 @@ class MT5RPyCClient:
     RPyC Client for MT5 server side adapter.
     """
 
-    def __init__(self):
+    def __init__(self, config: MT5ClientConfig):
         self.conn = None
+        self._config = config
         self._connected = False
         self._callbacks = []
         self._subscriptions = {}
-        self.log = Logger("MT5_Client")
+        self._log = Logger("MT5_Client")
 
-    def connect(
-        self, account_number, password, server, timeout, rpyc_host, rpyc_port
-    ) -> bool:
+    def connect(self) -> bool:
         try:
-            self.log.info(f"Connecting to RPyC server at {rpyc_host}:{rpyc_port}")
-            self.conn = MetaTrader5(host=rpyc_host, port=rpyc_port)
+            self._log.info(
+                f"Connecting to RPyC server at {self._config.rpyc_host}:{self._config.rpyc_port}",
+                LogColor.BLUE,
+            )
+            self.conn = MetaTrader5(
+                host=self._config.rpyc_host, port=self._config.rpyc_port
+            )
 
             # Initialize MT5 terminal
             initialized = self.conn.initialize(
-                login=account_number,
-                password=password,
-                server=server,
-                timeout=timeout,
+                login=self._config.account_number,
+                password=self._config.password,
+                server=self._config.server,
+                timeout=self._config.timeout,
             )
 
             if not initialized:
                 error = self.conn.last_error()
-                self.log.error(f"MT5 initialize failed: {error}")
+                self._log.error(f"MT5 initialize failed: {error}")
                 return False
 
             self._connected = True
-            self.log.info(f"Connected to MT5 via RPyC. Account: {account_number}")
+            self._log.info(
+                f"Connected to MT5 via RPyC. Account: {self._config.account_number}"
+            )
 
             # Start heartbeat thread
             self._start_heartbeat()
 
             return True
         except Exception as e:
-            self.log.error(f"Connection failed: {e}")
+            self._log.error(f"Connection failed: {e}")
             self.disconnect()
             return False
 
@@ -71,13 +78,13 @@ class MT5RPyCClient:
                 try:
                     time.sleep(30)
                     connection = rpyc.connect(
-                        self.config.rpyc_host, self.config.rpyc_port
+                        self._config.rpyc_host, self._config.rpyc_port
                     )
                     if connection:
                         # Simple thing for checking connection
                         connection.ping()
                 except:
-                    self.log.warning("Heartbeat failed, reconecting...")
+                    self._log.warning("Heartbeat failed, reconecting...")
                     self.reconnect()
 
         thread = threading.Thread(target=heartbeat(), daemon=True)
@@ -124,13 +131,16 @@ class MT5RPyCClient:
 
                 return bar
         except Exception as e:
-            self.log.error(f"Connection failed: {e}")
+            self._log.error(f"Connection failed: {e}")
             self.disconnect()
 
     def unsubscribe_bars(self, bar_type: nautilus_pyo3.BarType):
         pass
 
     def request_bars(self, bar_type: nautilus_pyo3.BarType, start, end, limit, partial):
+        pass
+
+    def request_instruments(self, active_only):
         pass
 
 
@@ -142,22 +152,20 @@ class AsyncMT5RPyCClient:
     def __init__(self, config: MT5ClientConfig):
         self.sync_client = MT5RPyCClient(config)
         self.executor = None
-        self.conn = self.sync_client.conn
 
-    async def connect(
-        self, account_number, password, server, timeout, rpyc_host, rpyc_port
-    ) -> bool:
+    async def connect(self) -> bool:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,
-            self.sync_client.connect(
-                account_number, password, server, timeout, rpyc_host, rpyc_port
-            ),
+            lambda: self.sync_client.connect(),
         )
 
     async def disconnect(self):
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.sync_client.disconnect)
+        return await loop.run_in_executor(
+            None,
+            lambda: self.sync_client.disconnect(),
+        )
 
     async def subscribe_bars(self, bar_type):
         loop = asyncio.get_event_loop()
@@ -175,4 +183,10 @@ class AsyncMT5RPyCClient:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, self.sync_client.request_bars(bar_type, start, end, limit, partial)
+        )
+
+    async def request_instruments(self, active_only):
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self.sync_client.request_instruments(active_only)
         )
