@@ -65,44 +65,71 @@ class MT5DataClient(LiveMarketDataClient):
         # Configuration
         self._client = AsyncMT5RPyCClient(config)  # I don't have any ideas about this
         self._config = config
-        self._connected = False
-        self._subscriptions: Set[InstrumentId] = set()
-        self._instuments_loaded = False
-        self._polling_task: Optional[asyncio.Task] = None
-        self._polling_interval = 0.1  # 100ms
         self._active_only = True  # Always use active instruments for live clients
 
-        # TODO:
-        # Set logging
+        # Periodic updates
+        self._update_instruments_interval_mins: int | None = (
+            config._update_instruments_interval_mins
+        )
+        self._update_instruments_task: asyncio.Task | None = None
 
     @property
     def instrument_provider(self) -> MT5InstrumentProvider:
         return self._instrument_provider  # type: ignore
 
     async def _connect(self) -> None:
-        try:
-            # Connect client
-            self._log.info("Connecting to MT5 Data Client...")
+        # Connect client
+        await self._instrument_provider.initialize()
+        self._cache_instruments()
+        self._send_all_instruments_to_data_engine()
 
-            success = await self._client.connect()
-            if not success:
-                raise ConnectionError("Failed to connect to MT5 via RPyC")
+        # instruments = self.instrument_provider.instruments_pyo3()
+        await self._client.connect()
 
-            self._connected = True
+        self._log.info(
+            f"Connected to RPyC {self._config.rpyc_host}:{self._config.rpyc_port}",
+            LogColor.BLUE,
+        )
 
-            # Load instruments based on config
-            await self.instrument_provider.initialize()
-            for instrument in self._instrument_provider.list_all():
-                self._handle_data(instrument)
+        # Start periodic instrument updates if configured
+        if self._update_instruments_interval_mins:
+            self._update_instruments_task = self.create_task(
+                self._update_instruments(self._update_instruments_interval_mins),
+            )
 
-            self._log.info("MT5 Data Client connected successfully")
-        except Exception as e:
-            self._log.error(f"Failed to connect: {e}")
-            raise
+    def _cache_instruments(self) -> None:
+        # Ensures instrument definitions are available for correct
+        # price and size precisions when parsing responses
+        instruments_pyo3 = self.instrument_provider.instruments_pyo3()
+
+        for inst in instruments_pyo3:
+            self._client.add_instrument(inst)
+
+        self._log.debug("Cached instruments", LogColor.MAGENTA)
+
+    def _send_all_instruments_to_data_engine(self) -> None:
+        for instrument in self._instrument_provider.get_all().values():
+            self._handle_data(instrument)
+
+        for currency in self._instrument_provider.currencies().values():
+            self._cache.add_currency(currency)
+
+    async def _update_instruments(self, interval_mins: int) -> None:
+        while True:
+            try:
+                self._log.debug(
+                    f"Scheduled task 'update_instruments' to run in {interval_mins} minutes",
+                )
+                await asyncio.sleep(interval_mins * 60)
+                await self._instrument_provider.initialize(reload=True)
+                self._send_all_instruments_to_data_engine()
+            except asyncio.CancelledError:
+                self._log.debug("Canceled task 'update_instruments'")
+            except Exception as e:
+                self._log.error(f"Error updating instruments: {e}")
 
     async def _disconnect(self) -> None:
         await self._client.disconnect()
-        self._connected = False
         self._log.info("MT5 Data Client disconnected")
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:

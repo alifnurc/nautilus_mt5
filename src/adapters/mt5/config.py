@@ -34,3 +34,5 @@ class MT5ClientConfig(LiveDataClientConfig, frozen=True):
     timeout: PositiveInt = 60000
     rpyc_host: str | None = None
     rpyc_port: PositiveInt | None = None
+
+    _update_instruments_interval_mins = 1
