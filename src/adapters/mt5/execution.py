@@ -1,7 +1,6 @@
 import asyncio
 from typing import Any
 
-from nautilus_trader.model import Venue
 
 from adapters.mt5.config import MT5ClientConfig
 from adapters.mt5.constants import MT5, MT5_VENUE
@@ -34,6 +33,14 @@ from nautilus_trader.live.cancellation import (
     cancel_tasks_with_timeout,
 )
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.model import (
+    Currency,
+    AccountBalance,
+    MarginBalance,
+    Money,
+    Venue,
+    instruments,
+)
 from nautilus_trader.model.enums import (
     AccountType,
     ContingencyType,
@@ -73,36 +80,166 @@ class MT5ExecutionClient(LiveExecutionClient):
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
+        client: AsyncMT5RPyCClient,
+        msgbus: MessageBus,
+        cache: Cache,
         clock: LiveClock,
-        logger: None,  # Log for nautilus_trader
+        instrument_provider: MT5InstrumentProvider,
         config: MT5ClientConfig,
-        account_type=nautilus_pyo3.AccountType.MARGIN,
+        name: str | None,
     ):
         super().__init__(
             loop=loop,
-            client_id=None,
+            client_id=ClientId(name or MT5_VENUE.value),
             venue=MT5_VENUE,
-            account_type=account_type,
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
             base_currency=None,
-            msgbus=None,
-            cache=None,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
-            logger=logger,
+            instrument_provider=instrument_provider,
         )
 
-        self.config = config
-        self.client = AsyncMT5RPyCClient(config)
+        # Configuration
+        self._client = AsyncMT5RPyCClient(config)  # I don't have any ideas about this
+        self._config = config
         self._connected = False
         self._account_info = None
+
+        # Set initial account ID (will be updated with actual account number on connect)
+        self._account_id_prefix = name or MT5_VENUE.value
+        account_id = AccountId(f"{self._account_id_prefix}-master")
+        self._set_account_id(account_id)
+
+        self._account_summary_loaded: asyncio.Event = asyncio.Event()
+        self._account_summary: dict[str, dict[str, Any]] = {}
 
         # TODO:
         # Mapping for tracking orders
 
-    async def connect(self) -> None:
-        pass
+    def _log_runtime_error(self, message: str) -> None:
+        self._log.error(message, LogColor.RED)
+        raise RuntimeError(message)
 
-    async def disconnect(self) -> None:
-        pass
+    @property
+    def instrument_provider(self) -> MT5InstrumentProvider:
+        return self._instrument_provider  # type: ignore
+
+    def _cache_instruments(self) -> None:
+        instruments_pyo3 = self._instrument_provider.instruments_pyo3()  # type: ignore
+
+        for inst in instruments_pyo3:
+            self._client.add_instrument(inst)
+
+        self._log.info("Cached instruments", LogColor.MAGENTA)
+
+    async def _connect(self) -> None:
+        # Connect client
+        await self._instrument_provider.initialize()
+        self._cache_instruments()
+
+        await self._client.connect()
+
+        await self._update_account_state()
+        await self._await_account_registered()
+
+        self._log.info("MT5 RPyC authenticated", LogColor.GREEN)
+
+        # # Check MT5-Nautilus clock sync
+        # server_time: int = await self._client.get_server_time()
+        # self._log.info(f"MT5 server time {server_time} UNIX (ms)")
+
+        nautilus_time: int = self._clock.timestamp_ms()
+        self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
+
+        self._log.info(
+            f"Connected to RPyC {self._config.rpyc_host}:{self._config.rpyc_port}"
+        )
+
+        try:
+            # TODO:
+            # await self._client.subscribe_orders()
+            # await self._client.subscribe_executions()
+            # await self._client.subscribe_positions()
+            # await self._client.subscribe_margin()
+            # await self._client.subscribe_wallet()
+            pass
+        except Exception as e:
+            self._log.error(f"Failed to subscribe to authenticated channels: {e}")
+
+    async def _update_account_state(self) -> None:
+        # First get the margin data to extract the actual account number
+        account_number = self._client.account_info().get("login")
+
+        # Update account ID with actual account number from MT5
+        if account_number:
+            actual_account_id = AccountId(f"{self._account_id_prefix}-{account_number}")
+            self._set_account_id(actual_account_id)
+            self.pyo3_account_id = nautilus_pyo3.AccountId(actual_account_id.value)
+            self._log.info(f"Updated account ID to {actual_account_id}", LogColor.BLUE)
+
+        # Get account state
+        pyo3_account_state = self._client.account_info()
+        currency = Currency.from_str(pyo3_account_state.get("currency"))
+        account_state = {
+            "balances": [
+                AccountBalance(
+                    total=Money(pyo3_account_state.get("balance"), currency),
+                    locked=Money(pyo3_account_state.get("margin"), currency),
+                    free=Money(pyo3_account_state.get("margin_free"), currency),
+                )
+            ],
+            "margins": [
+                MarginBalance(
+                    initial=Money(pyo3_account_state.get("margin"), currency),
+                    maintenance=Money(
+                        pyo3_account_state.get("margin_maintenance"), currency
+                    ),
+                )
+            ],
+        }
+
+        self.generate_account_state(
+            balances=account_state["balances"],
+            margins=account_state["margins"],
+            reported=True,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        if account_state["balances"]:
+            self._log.info(
+                f"Generated account state with {len(account_state["balances"])} balance(s)"
+            )
+
+    async def _disconnect(self) -> None:
+        # if not self._client.is_closed():
+        #     try:
+        #         await self._client.unsubscribe_orders()
+        #         await self._client.unsubscribe_executions()
+        #         await self._client.unsubscribe_positions()
+        #         await self._client.unsubscribe_margin()
+        #         await self._client.unsubscribe_wallet()
+        #     except Exception as e:
+        #         self._log.error(f"Failed to unsubscribe from channels: {e}")
+        #
+        # await asyncio.sleep(1.0)
+        #
+        # if not self._client.is_closed():
+        #     self._log.info("Disconnecting RPyC")
+        #
+        #     await self._client.close()
+        #
+        #     self._log.info(
+        #         f"Disconnected from {self._config.rpyc_host}:{self._config.rpyc_port}",
+        #         LogColor.BLUE,
+        #     )
+
+        # TODO:
+        # Cancel any pending futures
+
+        await self._client.disconnect()
+        self._log.info("MT5 Execution Client disconnected")
 
     async def _load_account_info(self) -> None:
         pass
