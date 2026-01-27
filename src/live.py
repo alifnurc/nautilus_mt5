@@ -8,6 +8,7 @@ from adapters.mt5 import (
     MT5LiveExecClientFactory,
 )
 from nautilus_trader.config import (
+    InstrumentProviderConfig,
     LiveExecEngineConfig,
     LoggingConfig,
     TradingNodeConfig,
@@ -36,6 +37,7 @@ config_node = TradingNodeConfig(
             timeout=120000,
             rpyc_host=str(os.getenv("MT5_RPYC_HOST")),
             rpyc_port=int(os.getenv("MT5_RPYC_PORT")),
+            instrument_provider=InstrumentProviderConfig(load_all=True),
         )
     },
     exec_clients={
@@ -46,6 +48,7 @@ config_node = TradingNodeConfig(
             timeout=120000,
             rpyc_host=str(os.getenv("MT5_RPYC_HOST")),
             rpyc_port=int(os.getenv("MT5_RPYC_PORT")),
+            instrument_provider=InstrumentProviderConfig(load_all=True),
         )
     },
 )

@@ -102,7 +102,7 @@ class MT5ExecutionClient(LiveExecutionClient):
         )
 
         # Configuration
-        self._client = AsyncMT5RPyCClient(config)  # I don't have any ideas about this
+        self._client = client
         self._config = config
         self._connected = False
         self._account_info = None
@@ -138,8 +138,6 @@ class MT5ExecutionClient(LiveExecutionClient):
         # Connect client
         await self._instrument_provider.initialize()
         self._cache_instruments()
-
-        await self._client.connect()
 
         await self._update_account_state()
         await self._await_account_registered()

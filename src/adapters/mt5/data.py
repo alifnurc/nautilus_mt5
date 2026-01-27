@@ -63,7 +63,7 @@ class MT5DataClient(LiveMarketDataClient):
         )
 
         # Configuration
-        self._client = AsyncMT5RPyCClient(config)  # I don't have any ideas about this
+        self._client = client
         self._config = config
         self._active_only = True  # Always use active instruments for live clients
 
@@ -84,7 +84,6 @@ class MT5DataClient(LiveMarketDataClient):
         self._send_all_instruments_to_data_engine()
 
         # instruments = self.instrument_provider.instruments_pyo3()
-        await self._client.connect()
 
         self._log.info(
             f"Connected to RPyC {self._config.rpyc_host}:{self._config.rpyc_port}",

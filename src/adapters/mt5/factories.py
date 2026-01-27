@@ -17,7 +17,7 @@ from nautilus_trader.live.factories import (
 
 @lru_cache(maxsize=1)
 def get_mt5_rpyc_client(config: MT5ClientConfig) -> AsyncMT5RPyCClient:
-    return AsyncMT5RPyCClient(config=config)
+    return AsyncMT5RPyCClient().initialize(config=config)
 
 
 @lru_cache(maxsize=1)
@@ -41,7 +41,7 @@ class MT5LiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
     ) -> MT5DataClient:
-        client = get_mt5_rpyc_client(MT5ClientConfig)
+        client = get_mt5_rpyc_client(config)
 
         provider = get_mt5_instrument_provider(
             client=client, active_only=True, config=config.instrument_provider
@@ -73,7 +73,7 @@ class MT5LiveExecClientFactory(LiveExecClientFactory):
         cache: Cache,
         clock: LiveClock,
     ) -> MT5ExecutionClient:
-        client = get_mt5_rpyc_client(MT5ClientConfig)
+        client = get_mt5_rpyc_client(config)
 
         provider = get_mt5_instrument_provider(
             client=client, active_only=True, config=config.instrument_provider

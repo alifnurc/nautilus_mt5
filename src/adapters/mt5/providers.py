@@ -52,6 +52,8 @@ class MT5InstrumentProvider(InstrumentProvider):
             self._active_only,
         )
 
+        self._log.debug(f"Instruments: {pyo3_instruments}")
+
         self._instruments_pyo3 = pyo3_instruments
         instruments = instruments_from_pyo3(pyo3_instruments)
         for instrument in instruments:
