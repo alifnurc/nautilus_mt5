@@ -69,11 +69,16 @@ class AsyncMT5RPyCClient:
     def is_initialized(self):
         return self._initialized
 
+    def shutdown(self):
+        if self.is_initialized():
+            self.conn.shutdown()
+        return self
+
     async def disconnect(self):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             self.executor,
-            None,
+            self.shutdown,
         )
 
     async def request_instruments(self, active_only):
