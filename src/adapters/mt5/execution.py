@@ -130,7 +130,7 @@ class MT5ExecutionClient(LiveExecutionClient):
         instruments_pyo3 = self._instrument_provider.instruments_pyo3()  # type: ignore
 
         for inst in instruments_pyo3:
-            self._client.add_instrument(inst)
+            self._client.cache_instrument(inst)
 
         self._log.info("Cached instruments", LogColor.MAGENTA)
 

@@ -102,7 +102,7 @@ class MT5DataClient(LiveMarketDataClient):
         instruments_pyo3 = self.instrument_provider.instruments_pyo3()
 
         for inst in instruments_pyo3:
-            self._client.add_instrument(inst)
+            self._client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 

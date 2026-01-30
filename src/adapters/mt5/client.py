@@ -1,11 +1,14 @@
 import asyncio
+from decimal import Decimal
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 
+from nautilus_trader.model.enums import asset_class_from_str
+from nautilus_trader.model.instruments import Cfd
 from pymt5linux import MetaTrader5
 from adapters.mt5.config import MT5ClientConfig
 from adapters.mt5.constants import MT5_VENUE
-from nautilus_trader.model import InstrumentId, Symbol
+from nautilus_trader.model import Currency, InstrumentId, Price, Quantity, Symbol
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
 
@@ -81,7 +84,7 @@ class AsyncMT5RPyCClient:
             self.shutdown,
         )
 
-    async def request_instruments(self, active_only):
+    async def request_instruments(self, active_only) -> Cfd:
         loop = asyncio.get_event_loop()
         try:
             mt5_symbols = await loop.run_in_executor(
@@ -89,13 +92,61 @@ class AsyncMT5RPyCClient:
                 lambda: self.conn.symbols_get(),
             )
 
-            instruments = []
+            instruments: list[Cfd] = []
             for i in range(len(mt5_symbols)):
-                instruments.append(InstrumentId(Symbol(mt5_symbols[i][-3]), MT5_VENUE))
+                size_precision: int = self._tick_size_to_precision(
+                    mt5_symbols[i].volume_step
+                )
+                instruments.append(
+                    Cfd(
+                        instrument_id=InstrumentId(
+                            Symbol(mt5_symbols[i][-3]), MT5_VENUE
+                        ),
+                        raw_symbol=Symbol(mt5_symbols[i].name),
+                        asset_class=asset_class_from_str(
+                            "Fx"
+                        ),  # TODO: Sperate indicies and forex soon
+                        quote_currency=Currency.from_str(
+                            mt5_symbols[i].currency_profit
+                        ),
+                        price_precision=mt5_symbols[i].digits,
+                        size_precision=size_precision,
+                        price_increment=Price(
+                            mt5_symbols[i].trade_tick_size, mt5_symbols[i].digits
+                        ),
+                        size_increment=Quantity(
+                            mt5_symbols[i].volume_step, size_precision
+                        ),
+                        ts_event=mt5_symbols[i].time * 1e9,
+                        ts_init=mt5_symbols[i].time * 1e9,
+                        base_currency=Currency.from_str(mt5_symbols[i].currency_base),
+                        lot_size=None,
+                        max_quantity=Quantity(
+                            mt5_symbols[i].volume_max, size_precision
+                        ),
+                        min_quantity=Quantity(
+                            mt5_symbols[i].volume_min, size_precision
+                        ),
+                        max_notional=None,
+                        min_notional=None,
+                        max_price=None,
+                        min_price=None,
+                        margin_init=Decimal(0),
+                        margin_maint=Decimal(0),
+                        maker_fee=Decimal(0),
+                        taker_fee=Decimal(0),
+                        tick_scheme_name=None,
+                        info=None,
+                    )
+                )
 
             return instruments
         except Exception as e:
             self._log.error(f"Failed to get instruments: {e}")
+
+    def _tick_size_to_precision(self, tick_size: float | Decimal) -> int:
+        tick_size_str = f"{tick_size:.10f}"
+        return len(tick_size_str.partition(".")[2].rstrip("0"))
 
     def account_info(self):
         try:
@@ -105,3 +156,6 @@ class AsyncMT5RPyCClient:
 
         except Exception as e:
             self._log.error(f"Failed to get account info: {e}")
+
+    def cache_instrument(self, inst):
+        pass
