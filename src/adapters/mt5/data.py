@@ -15,7 +15,11 @@ from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import (
     RequestBars,
     SubscribeBars,
+    SubscribeQuoteTicks,
+    SubscribeTradeTicks,
     UnsubscribeBars,
+    UnsubscribeQuoteTicks,
+    UnsubscribeTradeTicks,
 )
 from nautilus_trader.live.cancellation import (
     DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
@@ -135,10 +139,6 @@ class MT5DataClient(LiveMarketDataClient):
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         await self._client.subscribe_bars(pyo3_bar_type)
 
-    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
-        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
-        await self._client.unsubscribe_bars(pyo3_bar_type)
-
     async def _request_bars(self, request: RequestBars) -> None:
         bar_type = request.bar_type
 
@@ -153,8 +153,19 @@ class MT5DataClient(LiveMarketDataClient):
 
         spec = bar_type.spec
         supported = spec.price_type == PriceType.BID and (
-            (spec.aggregation == BarAggregation.MINUTE and spec.step in (1, 5))
-            or (spec.aggregation == BarAggregation.HOUR and spec.step == 1)
+            (
+                spec.aggregation == BarAggregation.MINUTE
+                and spec.step in (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30)
+            )
+            or (
+                spec.aggregation == BarAggregation.HOUR and spec.step == 1,
+                2,
+                3,
+                4,
+                6,
+                8,
+                12,
+            )
             or (spec.aggregation == BarAggregation.DAY and spec.step == 1)
         )
         if not supported:
@@ -175,13 +186,13 @@ class MT5DataClient(LiveMarketDataClient):
         if isinstance(request.params, dict):
             partial = bool(request.params.get("partial", False))
 
-        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
+        bar_type = BarType.from_str(str(bar_type))
         start = ensure_pydatetime_utc(request.start) if request.start else None
         end = ensure_pydatetime_utc(request.end) if request.end else None
 
         try:
-            pyo3_bars = await self._client.request_bars(
-                bar_type=pyo3_bar_type,
+            bars = await self._client.request_bars(
+                bar_type=bar_type,
                 start=start,
                 end=end,
                 limit=limit,
@@ -190,8 +201,6 @@ class MT5DataClient(LiveMarketDataClient):
         except Exception as e:  # pragma: no cover - network failures
             self._log.exception(f"Failed to request bars for {bar_type}", e)
             return
-
-        bars = Bar.from_pyo3_list(pyo3_bars)
 
         self._handle_bars(
             bar_type,
