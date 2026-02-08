@@ -11,13 +11,14 @@ from adapters.mt5.config import MT5ClientConfig
 from adapters.mt5.constants import MT5_VENUE
 from nautilus_trader.model import (
     Bar,
+    BarType,
     Currency,
     InstrumentId,
     Price,
     Quantity,
     Symbol,
 )
-from nautilus_trader.common.component import LiveClock, Logger
+from nautilus_trader.common.component import LiveClock, Logger, MessageBus
 from nautilus_trader.common.enums import LogColor
 
 
@@ -41,9 +42,9 @@ class AsyncMT5RPyCClient:
         self.executor = ThreadPoolExecutor(max_workers=2)
         self._log = Logger("MT5_Client")
         self._cache = {}
-        self._clock = LiveClock
+        self._subscription = {}
 
-    def initialize(self, config: MT5ClientConfig):
+    def initialize(self, config: MT5ClientConfig, msgbus: MessageBus, clock: LiveClock):
         try:
             self._log.info(
                 f"Connecting to RPyC server at {config.rpyc_host}:{config.rpyc_port}",
@@ -65,6 +66,8 @@ class AsyncMT5RPyCClient:
 
             self._initialized = True
             self._config = config
+            self._msgbus = msgbus
+            self._clock = clock
             self._log.info(
                 f"Connected to MT5 via RPyC. Account: {config.account_number}"
             )
@@ -165,6 +168,27 @@ class AsyncMT5RPyCClient:
         except Exception as e:
             self._log.error(f"Failed to get instruments: {e}")
 
+    async def subscribe_bars(self, bar_type: BarType):
+        try:
+            if bar_type in self._subscription:
+                return
+
+            self._subscription[bar_type] = asyncio.create_task(
+                self._bar_stream_loop(bar_type)
+            )
+
+        except Exception as e:
+            self._log.error(f"Failed to subscribe bars: {e}")
+
+    async def unsubscribe_bars(self, bar_type: BarType):
+        try:
+            if bar_type not in self._subscription:
+                return
+
+            self._subscription.pop(bar_type).cancel()
+        except Exception as e:
+            self._log.error(f"Failed to unsubscribe bars: {e}")
+
     async def request_bars(self, bar_type, start, end, limit, partial) -> list[Bar]:
         loop = asyncio.get_event_loop()
 
@@ -217,6 +241,51 @@ class AsyncMT5RPyCClient:
             return bars
         except Exception as e:
             self._log.error(f"Failed to request bars: {e}")
+
+    async def _bar_stream_loop(self, bar_type: BarType):
+        loop = asyncio.get_event_loop()
+
+        # Get bar specification
+        spec = bar_type.spec
+        symbol = bar_type.instrument_id.symbol
+        timeframe = self._get_timeframe(spec)
+        topic = f"data.bars.{bar_type}"
+
+        try:
+            while True:
+                mt5_bar = await loop.run_in_executor(
+                    self.executor,
+                    lambda: self.conn.copy_rates_from_pos(symbol, timeframe, 0, 1),
+                )
+
+                bar = Bar(
+                    bar_type=bar_type,
+                    open=Price(
+                        mt5_bar[0]["open"].item(),
+                        self._cache[symbol].price_precision,
+                    ),
+                    high=Price(
+                        mt5_bar[0]["high"].item(),
+                        self._cache[symbol].price_precision,
+                    ),
+                    low=Price(
+                        mt5_bar[0]["low"].item(),
+                        self._cache[symbol].price_precision,
+                    ),
+                    close=Price(
+                        mt5_bar[0]["close"].item(),
+                        self._cache[symbol].price_precision,
+                    ),
+                    volume=Quantity(mt5_bar[0]["tick_volume"].item(), precision=0),
+                    ts_event=mt5_bar[0]["time"] * 1e9,
+                    ts_init=mt5_bar[0]["time"] * 1e9,
+                )
+                if mt5_bar is not None:
+                    self._msgbus.publish(topic, bar)
+
+                await asyncio.sleep(1)
+        except Exception as e:
+            self._log.error(f"Failed to stream bar: {e}")
 
     def _get_broker_offset_time(self, symbol):
         tick = self.conn.symbol_info_tick(symbol)

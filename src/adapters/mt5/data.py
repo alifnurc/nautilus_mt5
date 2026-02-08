@@ -10,7 +10,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.transformers import transform_instrument_from_pyo3
 from nautilus_trader.common.component import LiveClock, MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.core import Request, nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import (
     RequestBars,
@@ -136,8 +135,12 @@ class MT5DataClient(LiveMarketDataClient):
         self._log.info("MT5 Data Client disconnected")
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
-        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
-        await self._client.subscribe_bars(pyo3_bar_type)
+        bar_type = BarType.from_str(str(command.bar_type))
+        await self._client.subscribe_bars(bar_type)
+
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        bar_type = BarType.from_str(str(command.bar_type))
+        await self._client.unsubscribe_bars(bar_type)
 
     async def _request_bars(self, request: RequestBars) -> None:
         bar_type = request.bar_type
