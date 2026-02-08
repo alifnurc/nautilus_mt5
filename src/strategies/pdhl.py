@@ -35,6 +35,8 @@ class PDHLConfig(StrategyConfig, frozen=True):
     bar_type: BarType
     trade_size: Decimal
     subscribe_quote_ticks: bool = False
+    request_bars: bool = True
+    unsubscribe_data_on_stop: bool = True
     order_time_in_force: TimeInForce = TimeInForce.DAY
     close_position_on_stop: bool = False
 
@@ -49,7 +51,7 @@ class PDHL(Strategy):
     def __init__(self, config: PDHLConfig) -> None:
         super().__init__(config)
 
-        self.instument: Instrument = None
+        self.instrument: Instrument = None
 
     # Stateful Actions
 
@@ -57,13 +59,17 @@ class PDHL(Strategy):
         """
         Actions to be performed on strategy start.
         """
-        self.instument = self.cache.instument(self.config.instrument_id)
-        if self.instument is None:
+        self.instrument = self.cache.instrument(self.config.instrument_id)
+        if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.config.instrument_id}")
             self.stop()
             return
 
         # Get historical data
+        if self.config.request_bars:
+            self.request_bars(
+                self.config.bar_type, start=self._clock.utc_now() - pd.Timedelta(days=1)
+            )
 
         # Subscribe to real-time data
         self.subscribe_bars(self.config.bar_type)

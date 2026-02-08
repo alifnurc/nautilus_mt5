@@ -16,7 +16,7 @@ from nautilus_trader.config import (
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId, TraderId
-from nautilus_trader.examples.strategies.ema_cross import EMACross, EMACrossConfig
+from strategies.pdhl import PDHL, PDHLConfig
 
 load_dotenv()
 
@@ -57,17 +57,15 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure the strategy
-config = EMACrossConfig(
+config = PDHLConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.{MT5}"),
     bar_type=BarType.from_str(
         f"{InstrumentId.from_str(f"{symbol}.{MT5}")}-15-MINUTE-BID-EXTERNAL"
     ),
-    fast_ema_period=10,
-    slow_ema_period=20,
     trade_size=Decimal(10_000),
 )
 
-strategy = EMACross(config=config)
+strategy = PDHL(config=config)
 
 # Add the strategy to the node
 node.trader.add_strategy(strategy=strategy)
