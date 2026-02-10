@@ -5,3 +5,4 @@
 *.MD
 __pycache__
 data
+log

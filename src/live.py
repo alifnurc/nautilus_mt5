@@ -25,7 +25,13 @@ symbol = "BTCUSD"
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="DEBUG", use_pyo3=True),
+    logging=LoggingConfig(
+        log_level="DEBUG",
+        use_pyo3=True,
+        log_level_file="DEBUG",
+        log_directory="./log",
+        log_file_format="json",
+    ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=False,
     ),

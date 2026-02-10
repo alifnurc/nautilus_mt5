@@ -6,3 +6,4 @@ reports
 __pycache__
 config/passwd
 .mt5
+log
