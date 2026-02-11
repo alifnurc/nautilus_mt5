@@ -245,11 +245,14 @@ class AsyncMT5RPyCClient:
                 )
 
                 if mt5_deals is not None:
+                    deals: list[FillReport] = []
                     for i in range(len(mt5_deals)):
-                        deal = self._parse_mt5_deals_to_fill_report(
-                            mt5_deal=mt5_deals, index=i
+                        deals.append(
+                            self._parse_mt5_deals_to_fill_report(
+                                mt5_deal=mt5_deals, index=i
+                            )
                         )
-                        self._msgbus.publish(topic, deal)
+                    self._msgbus.publish(topic, deals)
 
                 await asyncio.sleep(1)
         except Exception as e:
