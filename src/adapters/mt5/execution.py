@@ -104,7 +104,6 @@ class MT5ExecutionClient(LiveExecutionClient):
         # Configuration
         self._client = client
         self._config = config
-        self._connected = False
         self._account_info = None
 
         # Set initial account ID (will be updated with actual account number on connect)
@@ -158,11 +157,10 @@ class MT5ExecutionClient(LiveExecutionClient):
         try:
             # TODO:
             # await self._client.subscribe_orders()
-            # await self._client.subscribe_executions()
+            await self._client.subscribe_executions()
             # await self._client.subscribe_positions()
             # await self._client.subscribe_margin()
             # await self._client.subscribe_wallet()
-            pass
         except Exception as e:
             self._log.error(f"Failed to subscribe to authenticated channels: {e}")
 
@@ -211,27 +209,16 @@ class MT5ExecutionClient(LiveExecutionClient):
             )
 
     async def _disconnect(self) -> None:
-        # if not self._client.is_closed():
-        #     try:
-        #         await self._client.unsubscribe_orders()
-        #         await self._client.unsubscribe_executions()
-        #         await self._client.unsubscribe_positions()
-        #         await self._client.unsubscribe_margin()
-        #         await self._client.unsubscribe_wallet()
-        #     except Exception as e:
-        #         self._log.error(f"Failed to unsubscribe from channels: {e}")
-        #
-        # await asyncio.sleep(1.0)
-        #
-        # if not self._client.is_closed():
-        #     self._log.info("Disconnecting RPyC")
-        #
-        #     await self._client.close()
-        #
-        #     self._log.info(
-        #         f"Disconnected from {self._config.rpyc_host}:{self._config.rpyc_port}",
-        #         LogColor.BLUE,
-        #     )
+        try:
+            # await self._client.unsubscribe_orders()
+            await self._client.unsubscribe_executions()
+            # await self._client.unsubscribe_positions()
+            # await self._client.unsubscribe_margin()
+            # await self._client.unsubscribe_wallet()
+        except Exception as e:
+            self._log.error(f"Failed to unsubscribe from channels: {e}")
+
+        await asyncio.sleep(1.0)
 
         # TODO:
         # Cancel any pending futures
