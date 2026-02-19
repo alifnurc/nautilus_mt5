@@ -156,8 +156,8 @@ class MT5ExecutionClient(LiveExecutionClient):
 
         try:
             # TODO:
-            # await self._client.subscribe_orders()
-            await self._client.subscribe_executions()
+            await self._client.subscribe_orders()
+            # await self._client.subscribe_executions()
             # await self._client.subscribe_positions()
             # await self._client.subscribe_margin()
             # await self._client.subscribe_wallet()
@@ -210,8 +210,8 @@ class MT5ExecutionClient(LiveExecutionClient):
 
     async def _disconnect(self) -> None:
         try:
-            # await self._client.unsubscribe_orders()
-            await self._client.unsubscribe_executions()
+            await self._client.unsubscribe_orders()
+            # await self._client.unsubscribe_executions()
             # await self._client.unsubscribe_positions()
             # await self._client.unsubscribe_margin()
             # await self._client.unsubscribe_wallet()
@@ -225,6 +225,84 @@ class MT5ExecutionClient(LiveExecutionClient):
 
         await self._client.disconnect()
         self._log.info("MT5 Execution Client disconnected")
+
+    async def generate_order_status_reports(
+        self, command: GenerateOrderStatusReports
+    ) -> list[OrderStatusReport]:
+        try:
+            dict_reports = await self._client.request_order_status_reports(
+                instrument_id=command.instrument_id,
+                open_only=command.open_only,
+                limit=None,
+            )
+
+            reports: list[OrderStatusReport] = []
+
+            for dict_report in dict_reports:
+                reports.append(OrderStatusReport.from_dict(dict_report))
+
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
+
+            if command.log_receipt_level == LogLevel.INFO:
+                self._log.info(receipt_log)
+            else:
+                self._log.debug(receipt_log)
+
+            return reports
+        except Exception as e:
+            self._log.error(f"Failed to generate order status reports: {e}")
+            return []
+
+    async def generate_order_status_report(
+        self, command: GenerateOrderStatusReport
+    ) -> OrderStatusReport | None:
+        self._log.warning("Order status report generation not yet implemented")
+        return None
+
+    async def generate_fill_reports(
+        self, command: GenerateFillReports
+    ) -> list[FillReport]:
+        try:
+            dict_reports = await self._client.request_fill_reports(
+                instrument_id=command.instrument_id,
+                limit=None,
+            )
+
+            reports: list[FillReport] = []
+
+            for dict_report in dict_reports:
+                reports.append(FillReport.from_dict(dict_report))
+
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            self._log.info(f"Received {len(reports)} FillReport{plural}")
+
+            return reports
+        except Exception as e:
+            self._log.error(f"Failed to generate fill reports: {e}")
+            return []
+
+    async def generate_position_status_reports(
+        self, command: GeneratePositionStatusReports
+    ) -> list[PositionStatusReport]:
+        try:
+            dict_reports = await self._client.request_position_status_reports()
+
+            reports = []
+
+            for dict_report in dict_reports:
+                reports.append(PositionStatusReport.from_dict(dict_report))
+
+            len_reports = len(reports)
+            plural = "" if len_reports == 1 else "s"
+            self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
+
+            return reports
+        except Exception as e:
+            self._log.error(f"Failed to generate position status reports: {e}")
+            return []
 
     async def _load_account_info(self) -> None:
         pass

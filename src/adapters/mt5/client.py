@@ -7,7 +7,7 @@ from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.execution.reports import FillReport
+from nautilus_trader.execution.reports import FillReport, OrderStatusReport
 from nautilus_trader.model.enums import (
     BarAggregation,
     LiquiditySide,
@@ -287,6 +287,34 @@ class AsyncMT5RPyCClient:
                 await asyncio.sleep(1)
         except Exception as e:
             self._log.error(f"Failed to subscribe orders: {e}")
+
+    async def request_order_status_reports(
+        self, instrument_id: InstrumentId, open_only, limit
+    ) -> list[OrderStatusReport]:
+        self._log.debug(
+            f"Request_order_status_reports args: {instrument_id}, {open_only}, {limit}"
+        )
+
+        try:
+            pass
+        except Exception as e:
+            self._log.error(f"Failed to request order status reports: {e}")
+
+    async def request_fill_reports(
+        self, instrument_id: InstrumentId, limit
+    ) -> list[FillReport]:
+        self._log.debug(f"Request_fill_reports args: {instrument_id}, {limit}")
+
+        try:
+            pass
+        except Exception as e:
+            self._log.error(f"Failed to request fill reports: {e}")
+
+    async def request_position_status_reports(self) -> list:
+        try:
+            pass
+        except Exception as e:
+            self._log.error(f"Failed to request position status reports: {e}")
 
     def _get_broker_offset_time(self, symbol):
         tick = self.conn.symbol_info_tick(symbol)
