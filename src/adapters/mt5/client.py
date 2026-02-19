@@ -1,4 +1,5 @@
 import asyncio
+from nautilus_trader.model.events import OrderEvent
 import pandas as pd
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -191,17 +192,25 @@ class AsyncMT5RPyCClient:
         except Exception as e:
             self._log.error(f"Failed to request bars: {e}")
 
+    async def subscribe_orders(self):
+        self._subscription["orders"] = asyncio.create_task(self._orders_stream_loop())
+
     async def subscribe_executions(self):
-        self._subscription["orders"] = asyncio.create_task(
+        self._subscription["executions"] = asyncio.create_task(
             self._executions_stream_loop()
         )
 
-    async def unsubscribe_executions(self):
+    async def unsubscribe_orders(self):
         try:
             self._subscription.pop("orders").cancel()
-
         except Exception as e:
             self._log.error(f"Failed to unsubscribe orders: {e}")
+
+    async def unsubscribe_executions(self):
+        try:
+            self._subscription.pop("executions").cancel()
+        except Exception as e:
+            self._log.error(f"Failed to unsubscribe executions: {e}")
 
     async def _bar_stream_loop(self, bar_type: BarType):
         loop = asyncio.get_event_loop()
@@ -226,6 +235,27 @@ class AsyncMT5RPyCClient:
                 await asyncio.sleep(1)
         except Exception as e:
             self._log.error(f"Failed to subscribe bars: {e}")
+
+    async def _orders_stream_loop(self):
+        loop = asyncio.get_event_loop()
+
+        topic = f"events.order"
+
+        try:
+            while True:
+                mt5_orders = await loop.run_in_executor(
+                    self.executor, self.conn.orders_get
+                )
+
+                if mt5_orders is not None:
+                    orders: list = []
+                    for i in range(len(mt5_orders)):
+                        orders.append(
+                            self._parse_mt5_order(mt5_order=mt5_orders, index=i)
+                        )
+                    self._msgbus.publish(topic, orders)
+        except Exception as e:
+            self._log.error(f"Failed to subscribe orders: {e}")
 
     async def _executions_stream_loop(self):
         loop = asyncio.get_event_loop()
@@ -381,6 +411,9 @@ class AsyncMT5RPyCClient:
             ts_event=mt5_bar[index]["time"] * 1e9,
             ts_init=mt5_bar[index]["time"] * 1e9,
         )
+
+    def _parse_mt5_order(self, mt5_order, index=0):
+        return
 
     def _parse_mt5_deals_to_fill_report(self, mt5_deal, index=0):
         instrument_id = InstrumentId(Symbol(mt5_deal[index][15]), MT5_VENUE)
