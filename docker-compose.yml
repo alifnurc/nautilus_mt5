@@ -18,6 +18,9 @@ services:
       - "50319:50319"
       - "60832:60832"
       - "18847:18847"
-    restart: "no"
-    tty: true
+    restart: "always"
+    volumes:
+      - ./.mt5:/app/mt5
+      - ./config:/app/config
+    working_dir: /app
     command: bash config/setup.sh
