@@ -136,7 +136,7 @@ class AsyncMT5RPyCClient:
             instruments: list[Cfd] = []
             for i in range(len(mt5_symbols)):
                 instruments.append(
-                    self._parse_mt5_symbol_to_cfd(mt5_symbol=mt5_symbols, index=i)
+                    self._parse_mt5_symbol_to_cfd(mt5_symbol=mt5_symbols[i])
                 )
 
             return instruments
@@ -185,7 +185,7 @@ class AsyncMT5RPyCClient:
             bars: list[Bar] = []
             for i in range(len(mt5_bars)):
                 bars.append(
-                    self._parse_mt5_bar(mt5_bar=mt5_bars, bar_type=bar_type, index=i)
+                    self._parse_mt5_bar(mt5_bar=mt5_bars[i], bar_type=bar_type[i])
                 )
 
             return bars
@@ -228,7 +228,7 @@ class AsyncMT5RPyCClient:
                     lambda: self.conn.copy_rates_from_pos(symbol, timeframe, 0, 1),
                 )
 
-                bar = self._parse_mt5_bar(mt5_bar=mt5_bar, bar_type=bar_type)
+                bar = self._parse_mt5_bar(mt5_bar=mt5_bar[0], bar_type=bar_type)
                 if mt5_bar is not None:
                     self._msgbus.publish(topic, bar)
 
@@ -250,9 +250,7 @@ class AsyncMT5RPyCClient:
                 if mt5_orders is not None:
                     orders: list = []
                     for i in range(len(mt5_orders)):
-                        orders.append(
-                            self._parse_mt5_order(mt5_order=mt5_orders, index=i)
-                        )
+                        orders.append(self._parse_mt5_order(mt5_order=mt5_orders[i]))
                     self._msgbus.publish(topic, orders)
         except Exception as e:
             self._log.error(f"Failed to subscribe orders: {e}")
@@ -278,9 +276,7 @@ class AsyncMT5RPyCClient:
                     deals: list[FillReport] = []
                     for i in range(len(mt5_deals)):
                         deals.append(
-                            self._parse_mt5_deals_to_fill_report(
-                                mt5_deal=mt5_deals, index=i
-                            )
+                            self._parse_mt5_deals_to_fill_report(mt5_deal=mt5_deals[i])
                         )
                     self._msgbus.publish(topic, deals)
 
@@ -378,30 +374,26 @@ class AsyncMT5RPyCClient:
         tick_size_str = f"{tick_size:.10f}"
         return len(tick_size_str.partition(".")[2].rstrip("0"))
 
-    def _parse_mt5_symbol_to_cfd(self, mt5_symbol, index=0):
-        size_precision: int = self._tick_size_to_precision(
-            mt5_symbol[index].volume_step
-        )
+    def _parse_mt5_symbol_to_cfd(self, mt5_symbol):
+        size_precision: int = self._tick_size_to_precision(mt5_symbol.volume_step)
 
         return Cfd(
-            instrument_id=InstrumentId(Symbol(mt5_symbol[index][-3]), MT5_VENUE),
-            raw_symbol=Symbol(mt5_symbol[index].name),
+            instrument_id=InstrumentId(Symbol(mt5_symbol[-3]), MT5_VENUE),
+            raw_symbol=Symbol(mt5_symbol.name),
             asset_class=asset_class_from_str(
                 "Fx"
             ),  # TODO: Sperate indicies and forex soon
-            quote_currency=Currency.from_str(mt5_symbol[index].currency_profit),
-            price_precision=mt5_symbol[index].digits,
+            quote_currency=Currency.from_str(mt5_symbol.currency_profit),
+            price_precision=mt5_symbol.digits,
             size_precision=size_precision,
-            price_increment=Price(
-                mt5_symbol[index].trade_tick_size, mt5_symbol[index].digits
-            ),
-            size_increment=Quantity(mt5_symbol[index].volume_step, size_precision),
-            ts_event=mt5_symbol[index].time * 1e9,
-            ts_init=mt5_symbol[index].time * 1e9,
-            base_currency=Currency.from_str(mt5_symbol[index].currency_base),
+            price_increment=Price(mt5_symbol.trade_tick_size, mt5_symbol.digits),
+            size_increment=Quantity(mt5_symbol.volume_step, size_precision),
+            ts_event=mt5_symbol.time * 1e9,
+            ts_init=mt5_symbol.time * 1e9,
+            base_currency=Currency.from_str(mt5_symbol.currency_base),
             lot_size=None,
-            max_quantity=Quantity(mt5_symbol[index].volume_max, size_precision),
-            min_quantity=Quantity(mt5_symbol[index].volume_min, size_precision),
+            max_quantity=Quantity(mt5_symbol.volume_max, size_precision),
+            min_quantity=Quantity(mt5_symbol.volume_min, size_precision),
             max_notional=None,
             min_notional=None,
             max_price=None,
@@ -414,55 +406,55 @@ class AsyncMT5RPyCClient:
             info=None,
         )
 
-    def _parse_mt5_bar(self, mt5_bar, bar_type: BarType, index=0):
+    def _parse_mt5_bar(self, mt5_bar, bar_type: BarType):
         instrument = self._cache.instrument(bar_type.instrument_id)
 
         return Bar(
             bar_type=bar_type,
             open=Price(
-                mt5_bar[index]["open"].item(),
+                mt5_bar["open"].item(),
                 instrument.price_precision,
             ),
             high=Price(
-                mt5_bar[index]["high"].item(),
+                mt5_bar["high"].item(),
                 instrument.price_precision,
             ),
             low=Price(
-                mt5_bar[index]["low"].item(),
+                mt5_bar["low"].item(),
                 instrument.price_precision,
             ),
             close=Price(
-                mt5_bar[index]["close"].item(),
+                mt5_bar["close"].item(),
                 instrument.price_precision,
             ),
-            volume=Quantity(mt5_bar[index]["tick_volume"].item(), precision=0),
-            ts_event=mt5_bar[index]["time"] * 1e9,
-            ts_init=mt5_bar[index]["time"] * 1e9,
+            volume=Quantity(mt5_bar["tick_volume"].item(), precision=0),
+            ts_event=mt5_bar["time"] * 1e9,
+            ts_init=mt5_bar["time"] * 1e9,
         )
 
-    def _parse_mt5_order(self, mt5_order, index=0):
+    def _parse_mt5_order(self, mt5_order):
         return
 
-    def _parse_mt5_deals_to_fill_report(self, mt5_deal, index=0):
-        instrument_id = InstrumentId(Symbol(mt5_deal[index][15]), MT5_VENUE)
+    def _parse_mt5_deals_to_fill_report(self, mt5_deal):
+        instrument_id = InstrumentId(Symbol(mt5_deal[15]), MT5_VENUE)
         instrument = self._cache.instrument(instrument_id)
-        order_side = OrderSide.BUY if mt5_deal[index][4] == 0 else OrderSide.SELL
+        order_side = OrderSide.BUY if mt5_deal[4] == 0 else OrderSide.SELL
 
         return FillReport(
             account_id=self._config.account_number,
             instrument_id=instrument_id,
-            venue_order_id=mt5_deal[index][0],
-            trade_id=mt5_deal[index][1],
+            venue_order_id=mt5_deal[0],
+            trade_id=mt5_deal[1],
             order_side=order_side,
-            last_qty=Quantity(mt5_deal[index][9], precision=instrument.size_precision),
-            last_px=Money(mt5_deal[index][10], instrument.quote_currency),
-            commission=Money(mt5_deal[index][11], instrument.quote_currency),
+            last_qty=Quantity(mt5_deal[9], precision=instrument.size_precision),
+            last_px=Money(mt5_deal[10], instrument.quote_currency),
+            commission=Money(mt5_deal[11], instrument.quote_currency),
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,  # TODO: Detect order type
             report_id=UUID4(),
-            ts_event=mt5_deal[index][2] * 1e9,
-            ts_init=mt5_deal[index][2] * 1e9,
+            ts_event=mt5_deal[2] * 1e9,
+            ts_init=mt5_deal[2] * 1e9,
             client_order_id=None,
-            venue_position_id=mt5_deal[index][7],
+            venue_position_id=mt5_deal[7],
         )
 
     def account_info(self):
