@@ -1,12 +1,12 @@
 import asyncio
-from nautilus_trader.model.events import OrderEvent
 import pandas as pd
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Dict
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 
-from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.core import UUID4
 from nautilus_trader.execution.reports import FillReport, OrderStatusReport
 from nautilus_trader.model.enums import (
     BarAggregation,
@@ -148,7 +148,7 @@ class AsyncMT5RPyCClient:
             return
 
         self._subscription[bar_type] = asyncio.create_task(
-            self._bar_stream_loop(bar_type)
+            self._bar_stream_loop(bar_type=bar_type)
         )
 
     async def unsubscribe_bars(self, bar_type: BarType):
@@ -170,7 +170,7 @@ class AsyncMT5RPyCClient:
         # Get bar request specification
         spec = bar_type.spec
         symbol = bar_type.instrument_id.symbol
-        timeframe = self._get_timeframe(spec)
+        timeframe = self._get_timeframe(spec=spec)
 
         self._log.debug(
             f"Bar request args: {bar_type}, {start}, {end}, {limit}, {partial}"
@@ -179,7 +179,9 @@ class AsyncMT5RPyCClient:
         try:
             mt5_bars = await loop.run_in_executor(
                 self.executor,
-                lambda: self.conn.copy_rates_range(symbol, timeframe, start, end),
+                lambda: self.conn.copy_rates_range(
+                    symbol=symbol, timeframe=timeframe, date_from=start, date_to=end
+                ),
             )
 
             bars: list[Bar] = []
@@ -218,14 +220,16 @@ class AsyncMT5RPyCClient:
         # Get bar specification
         spec = bar_type.spec
         symbol = bar_type.instrument_id.symbol
-        timeframe = self._get_timeframe(spec)
+        timeframe = self._get_timeframe(spec=spec)
         topic = f"data.bars.{bar_type}"
 
         try:
             while True:
                 mt5_bar = await loop.run_in_executor(
                     self.executor,
-                    lambda: self.conn.copy_rates_from_pos(symbol, timeframe, 0, 1),
+                    lambda: self.conn.copy_rates_from_pos(
+                        symbol=symbol, timeframe=timeframe, start_pos=0, count=1
+                    ),
                 )
 
                 bar = self._parse_mt5_bar(mt5_bar=mt5_bar[0], bar_type=bar_type)
@@ -269,7 +273,9 @@ class AsyncMT5RPyCClient:
 
                 mt5_deals = await loop.run_in_executor(
                     self.executor,
-                    lambda: self.conn.history_deals_get(date_from, date_to),
+                    lambda: self.conn.history_deals_get(
+                        date_from=date_from, date_to=date_to
+                    ),
                 )
 
                 if mt5_deals is not None:
@@ -312,31 +318,6 @@ class AsyncMT5RPyCClient:
         except Exception as e:
             self._log.error(f"Failed to request position status reports: {e}")
 
-    def _get_broker_offset_time(self, symbol):
-        tick = self.conn.symbol_info_tick(symbol)
-        server_epoch = tick.time
-        utc_epoch = int(self._clock.timestamp())
-
-        offset_sec = server_epoch - utc_epoch
-
-        # Snap to closest hours (DST-safe enough)
-        offset_sec = round(offset_sec / 3600) * 3600
-        return offset_sec
-
-    def _get_broker_timezone(self, symbol):
-        tick = self.conn.symbol_info_tick(symbol)
-        server_dt = datetime.fromtimestamp(tick.time, tz=timezone.utc)
-        utc_now = self._clock.utc_now()
-
-        offset_hours = round((server_dt - utc_now).total_seconds() / 3600)
-
-        if offset_hours == 0:
-            return "UTC"
-        elif offset_hours in (2, 3):
-            return "Europe/EET"
-        else:
-            raise ValueError(f"Unknown broker timezone offset: {offset_hours}")
-
     def _get_timeframe(self, spec):
         step = spec.step
         aggregation = spec.aggregation
@@ -375,10 +356,12 @@ class AsyncMT5RPyCClient:
         return len(tick_size_str.partition(".")[2].rstrip("0"))
 
     def _parse_mt5_symbol_to_cfd(self, mt5_symbol):
-        size_precision: int = self._tick_size_to_precision(mt5_symbol.volume_step)
+        size_precision: int = self._tick_size_to_precision(
+            tick_size=mt5_symbol.volume_step
+        )
 
         return Cfd(
-            instrument_id=InstrumentId(Symbol(mt5_symbol[-3]), MT5_VENUE),
+            instrument_id=InstrumentId(Symbol(mt5_symbol.name), MT5_VENUE),
             raw_symbol=Symbol(mt5_symbol.name),
             asset_class=asset_class_from_str(
                 "Fx"
@@ -403,7 +386,7 @@ class AsyncMT5RPyCClient:
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
             tick_scheme_name=None,
-            info=None,
+            info=dict(mt5_symbol._asdict()),
         )
 
     def _parse_mt5_bar(self, mt5_bar, bar_type: BarType):
