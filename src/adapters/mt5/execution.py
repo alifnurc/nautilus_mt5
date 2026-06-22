@@ -402,12 +402,6 @@ class MT5ExecutionClient(LiveExecutionClient):
     async def _handle_order_update(self, order) -> None:
         pass
 
-    async def submit_order(self, command: nautilus_pyo3.LimitOrder) -> None:
-        pass
-
-    def _create_mt5_order_request(self, order: Order, command) -> dict:
-        pass
-
     # async def modify_order(self, command: nautilus_pyo3.ModifyOrder) -> None:
     #     pass
 
