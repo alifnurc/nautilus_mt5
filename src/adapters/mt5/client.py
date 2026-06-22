@@ -2,7 +2,6 @@ import asyncio
 import pandas as pd
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Dict
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 
@@ -12,6 +11,8 @@ from nautilus_trader.model.enums import (
     BarAggregation,
     LiquiditySide,
     OrderSide,
+    OrderType,
+    TimeInForce,
     asset_class_from_str,
 )
 from nautilus_trader.model.instruments import Cfd
@@ -21,6 +22,7 @@ from adapters.mt5.constants import MT5_VENUE
 from nautilus_trader.model import (
     Bar,
     BarType,
+    ClientOrderId,
     Currency,
     InstrumentId,
     Money,
@@ -318,6 +320,53 @@ class AsyncMT5RPyCClient:
         except Exception as e:
             self._log.error(f"Failed to request position status reports: {e}")
 
+    async def submit_order(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Price,
+        trigger_price: Price,
+        trigger_type,
+        tp_price,
+        sl_price,
+        display_qty: Quantity,
+        post_only,
+        reduce_only,
+        order_list_id,
+        contingency_type,
+    ):
+        loop = asyncio.get_event_loop()
+        request = self._parse_order_request(
+            instrument_id=instrument_id,
+            order_side=order_side,
+            order_type=order_type,
+            quantity=quantity,
+            time_in_force=time_in_force,
+            price=price,
+            tp_price=tp_price,
+            sl_price=sl_price,
+        )
+
+        self._log.debug(f"MT5_Order_request args: {request}")
+
+        try:
+            mt5_order_request = await loop.run_in_executor(
+                self.executor, lambda: self.conn.order_send(request=request)
+            )
+
+            if mt5_order_request.retcode == self.conn.TRADE_RETCODE_DONE:
+                self._cache.add(
+                    key=f"mt5_order-{client_order_id}", value=mt5_order_request
+                )
+        except Exception as e:
+            self._log.error(
+                f"Failed to submit order: {e}, Venue last error: {self.conn.last_error()}"
+            )
+
     def _get_timeframe(self, spec):
         step = spec.step
         aggregation = spec.aggregation
@@ -359,6 +408,8 @@ class AsyncMT5RPyCClient:
         size_precision: int = self._tick_size_to_precision(
             tick_size=mt5_symbol.volume_step
         )
+        unparsed_fields = ("trade_contract_size", "path")
+        info = {f: getattr(mt5_symbol, f) for f in unparsed_fields}
 
         return Cfd(
             instrument_id=InstrumentId(Symbol(mt5_symbol.name), MT5_VENUE),
@@ -386,7 +437,7 @@ class AsyncMT5RPyCClient:
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
             tick_scheme_name=None,
-            info=dict(mt5_symbol._asdict()),
+            info=info,
         )
 
     def _parse_mt5_bar(self, mt5_bar, bar_type: BarType):
@@ -414,6 +465,86 @@ class AsyncMT5RPyCClient:
             ts_event=mt5_bar["time"] * 1e9,
             ts_init=mt5_bar["time"] * 1e9,
         )
+
+    def _parse_order_request(
+        self,
+        instrument_id,
+        order_side,
+        order_type,
+        quantity,
+        time_in_force,
+        price,
+        tp_price,
+        sl_price,
+    ):
+        order_request = {}
+
+        if order_type == 1:  # market order
+            order_request["action"] = self.conn.TRADE_ACTION_DEAL
+            order_request["type"] = (
+                self.conn.ORDER_TYPE_BUY
+                if order_side == 1
+                else self.conn.ORDER_TYPE_SELL
+            )
+        if order_type == 2:  # limit order
+            order_request["action"] = self.conn.TRADE_ACTION_PENDING
+            order_request["type"] = (
+                self.conn.ORDER_TYPE_BUY_LIMIT
+                if order_side == 1
+                else self.conn.ORDER_TYPE_SELL_LIMIT
+            )
+        if order_type == 3:  # stop market order
+            order_request["action"] = self.conn.TRADE_ACTION_PENDING
+            order_request["type"] = (
+                self.conn.ORDER_TYPE_BUY_STOP
+                if order_side == 1
+                else self.conn.ORDER_TYPE_SELL_STOP
+            )
+        if order_type == 4:  # stop limit order
+            order_request["action"] = self.conn.TRADE_ACTION_PENDING
+            order_request["type"] = (
+                self.conn.ORDER_TYPE_BUY_STOP_LIMIT
+                if order_side == 1
+                else self.conn.ORDER_TYPE_SELL_STOP_LIMIT
+            )
+        if price is not None:
+            order_request["price"] = float(price)
+        if tp_price is not None:
+            order_request["tp"] = float(tp_price)
+        if sl_price is not None:
+            order_request["sl"] = float(sl_price)
+
+        order_request["symbol"] = str(instrument_id.symbol)
+        order_request["volume"] = self._parse_lot_size(
+            quantity=quantity, instrument_id=instrument_id
+        )
+        order_request["expiration"] = self._parse_time_in_force(
+            time_inforce=time_in_force
+        )
+
+        return order_request
+
+    def _parse_lot_size(self, quantity: Quantity, instrument_id: InstrumentId):
+        contract_size = self._cache.instrument(instrument_id).info.get(
+            "trade_contract_size"
+        )
+        lot_size = quantity / contract_size
+        lot_min = self._cache.instrument(instrument_id).min_quantity
+        lot_max = self._cache.instrument(instrument_id).max_quantity
+
+        if lot_size < lot_min:
+            raise ValueError(f"The quantity should be {lot_min} or higher!")
+        if lot_size > lot_max:
+            raise ValueError(f"The quantity should be less than {lot_max}!")
+        return lot_size
+
+    def _parse_time_in_force(self, time_inforce: TimeInForce):
+        if time_inforce is TimeInForce.GTC:
+            return self.conn.ORDER_TIME_GTC
+        if time_inforce is TimeInForce.DAY:
+            return self.conn.ORDER_TIME_DAY
+        if time_inforce is TimeInForce.GTD:
+            return self.conn.ORDER_TIME_SPECIFIED_DAY
 
     def _parse_mt5_order(self, mt5_order):
         return

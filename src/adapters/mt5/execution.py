@@ -1,25 +1,20 @@
 import asyncio
 from typing import Any
 
-
 from adapters.mt5.config import MT5ClientConfig
-from adapters.mt5.constants import MT5, MT5_VENUE
+from adapters.mt5.constants import MT5_VENUE
 from adapters.mt5.client import AsyncMT5RPyCClient
 from adapters.mt5.providers import MT5InstrumentProvider
-from adapters.mt5.types import MT5_INSTRUMENT_TYPES, MT5Instrument
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock, MessageBus
 from nautilus_trader.common.enums import LogColor, LogLevel
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import (
-    BatchCancelOrders,
-    CancelOrder,
     GenerateFillReports,
     GenerateOrderStatusReport,
     GenerateOrderStatusReports,
-    ModifyOrder,
-    QueryOrder,
+    GeneratePositionStatusReports,
     SubmitOrder,
     SubmitOrderList,
 )
@@ -28,40 +23,23 @@ from nautilus_trader.execution.reports import (
     OrderStatusReport,
     PositionStatusReport,
 )
-from nautilus_trader.live.cancellation import (
-    DEFAULT_FUTURE_CANCELLATION_TIMEOUT,
-    cancel_tasks_with_timeout,
-)
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model import (
     Currency,
     AccountBalance,
     MarginBalance,
     Money,
-    Venue,
-    instruments,
+    OrderListId,
+    Price,
 )
 from nautilus_trader.model.enums import (
     AccountType,
     ContingencyType,
     OmsType,
-    OrderStatus,
+    contingency_type_from_str,
+    trigger_type_from_str,
 )
-from nautilus_trader.model.events import (
-    AccountState,
-    OrderCancelRejected,
-    OrderModifyRejected,
-    OrderRejected,
-    OrderUpdated,
-)
-from nautilus_trader.model.functions import (
-    contingency_type_to_pyo3,
-    order_side_to_pyo3,
-    order_type_to_pyo3,
-    time_in_force_to_pyo3,
-    trigger_type_to_pyo3,
-)
-from nautilus_trader.model.identifiers import AccountId, ClientId, ClientOrderId
+from nautilus_trader.model.identifiers import AccountId, ClientId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
@@ -303,6 +281,102 @@ class MT5ExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.error(f"Failed to generate position status reports: {e}")
             return []
+
+    async def _submit_order(self, command: SubmitOrder) -> None:
+        order = command.order
+        params = command.params
+
+        if order.is_closed:
+            self._log.warning(f"Cannot submit already closed order: {order}")
+            return
+
+        if order.is_quote_quantity:
+            reason = "UNSUPPORTED_QUOTE_QUANTITY"
+            self._log.error(f"Cannot submit order {order.client_order_id}: {reason}")
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        # Generate OrderSubmitted event here to ensure conrrect event sequencing
+        self.generate_order_submitted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        price = order.price if order.has_price else None
+        trigger_price = (
+            Price.from_str(str(order.trigger_price))
+            if order.has_trigger_price
+            else None
+        )
+        trigger_type = (
+            trigger_type_from_str(str(order.trigger_type))
+            if order.has_trigger_price and hasattr(order, "trigger_type")
+            else None
+        )
+        tp_price = params.get("take_profit")
+        sl_price = params.get("stop_loss")
+        display_qty = (
+            Quantity.from_str(str(order.display_qty))
+            if hasattr(order, "display_qty") and order.display_qty
+            else None
+        )
+        contingency_type = None
+        order_list_id = None
+
+        if order.order_list_id is not None:
+            order_list_id = OrderListId(order.order_list.value)
+
+        if order.contingency_type in (ContingencyType.OCO, ContingencyType.OTO):
+            contingency_type = contingency_type_from_str(str(order.contingency_type))
+
+        try:
+            await self._client.submit_order(
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                order_side=order.side,
+                order_type=order.order_type,
+                quantity=order.quantity,
+                time_in_force=order.time_in_force,
+                price=price,
+                trigger_price=trigger_price,
+                trigger_type=trigger_type,
+                tp_price=tp_price,
+                sl_price=sl_price,
+                display_qty=display_qty,
+                post_only=order.is_post_only,
+                reduce_only=order.is_reduce_only,
+                order_list_id=order_list_id,
+                contingency_type=contingency_type,
+            )
+        except Exception as e:
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+    async def _submit_order_list(self, command: SubmitOrderList) -> None:
+        for order in command.order_list_orders:
+            submit_command = SubmitOrder(
+                trader_id=command.trader_id,
+                strategy_id=command.strategy_id,
+                order=order,
+                command_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+                position_id=command.position_id,
+                client_id=command.client_id,
+                params=command.params,
+            )
+            await self._submit_order(submit_command)
 
     async def _load_account_info(self) -> None:
         pass
