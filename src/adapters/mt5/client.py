@@ -408,8 +408,8 @@ class AsyncMT5RPyCClient:
         size_precision: int = self._tick_size_to_precision(
             tick_size=mt5_symbol.volume_step
         )
-        unparsed_fields = ("trade_contract_size", "path")
-        info = {f: getattr(mt5_symbol, f) for f in unparsed_fields}
+        # unparsed_fields = ("path")
+        # info = {f: getattr(mt5_symbol, f) for f in unparsed_fields}
 
         return Cfd(
             instrument_id=InstrumentId(Symbol(mt5_symbol.name), MT5_VENUE),
@@ -425,9 +425,13 @@ class AsyncMT5RPyCClient:
             ts_event=mt5_symbol.time * 1e9,
             ts_init=mt5_symbol.time * 1e9,
             base_currency=Currency.from_str(mt5_symbol.currency_base),
-            lot_size=None,
-            max_quantity=Quantity(mt5_symbol.volume_max, size_precision),
-            min_quantity=Quantity(mt5_symbol.volume_min, size_precision),
+            lot_size=Quantity(mt5_symbol.trade_contract_size, 0),
+            max_quantity=Quantity(
+                mt5_symbol.trade_contract_size * mt5_symbol.volume_max, size_precision
+            ),
+            min_quantity=Quantity(
+                mt5_symbol.trade_contract_size * mt5_symbol.volume_min, size_precision
+            ),
             max_notional=None,
             min_notional=None,
             max_price=None,
@@ -437,11 +441,12 @@ class AsyncMT5RPyCClient:
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
             tick_scheme_name=None,
-            info=info,
+            info=None,
         )
 
     def _parse_mt5_bar(self, mt5_bar, bar_type: BarType):
         instrument = self._cache.instrument(bar_type.instrument_id)
+        size_precision = instrument.size_precision
 
         return Bar(
             bar_type=bar_type,
@@ -461,7 +466,7 @@ class AsyncMT5RPyCClient:
                 mt5_bar["close"].item(),
                 instrument.price_precision,
             ),
-            volume=Quantity(mt5_bar["tick_volume"].item(), precision=0),
+            volume=Quantity(mt5_bar["tick_volume"].item(), precision=size_precision),
             ts_event=mt5_bar["time"] * 1e9,
             ts_init=mt5_bar["time"] * 1e9,
         )
@@ -515,28 +520,14 @@ class AsyncMT5RPyCClient:
             order_request["sl"] = float(sl_price)
 
         order_request["symbol"] = str(instrument_id.symbol)
-        order_request["volume"] = self._parse_lot_size(
-            quantity=quantity, instrument_id=instrument_id
+        order_request["volume"] = float(
+            quantity / self._cache.instrument(instrument_id).lot_size
         )
         order_request["expiration"] = self._parse_time_in_force(
             time_inforce=time_in_force
         )
 
         return order_request
-
-    def _parse_lot_size(self, quantity: Quantity, instrument_id: InstrumentId):
-        contract_size = self._cache.instrument(instrument_id).info.get(
-            "trade_contract_size"
-        )
-        lot_size = quantity / contract_size
-        lot_min = self._cache.instrument(instrument_id).min_quantity
-        lot_max = self._cache.instrument(instrument_id).max_quantity
-
-        if lot_size < lot_min:
-            raise ValueError(f"The quantity should be {lot_min} or higher!")
-        if lot_size > lot_max:
-            raise ValueError(f"The quantity should be less than {lot_max}!")
-        return lot_size
 
     def _parse_time_in_force(self, time_inforce: TimeInForce):
         if time_inforce is TimeInForce.GTC:
