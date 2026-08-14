@@ -7,3 +7,4 @@ __pycache__
 config/passwd
 .mt5
 log
+*.egg-info

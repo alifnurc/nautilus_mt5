@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from decimal import Decimal
-from adapters.mt5 import (
+from nautilus_mt5.adapters.mt5 import (
     MT5,
     MT5ClientConfig,
     MT5LiveDataClientFactory,
@@ -16,11 +16,15 @@ from nautilus_trader.config import (
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId, TraderId
-from strategies.pdhl import PDHL, PDHLConfig
+from nautilus_trader.model.enums import OrderSide
+from nautilus_mt5.examples.strategies.periodic_market_order import (
+    PeriodicMarketOrderConfig,
+    PeriodicMarketOrderStrategy,
+)
 
 load_dotenv()
 
-symbol = "BTCUSD"
+symbol = "EURUSDm"
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -63,15 +67,17 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure the strategy
-config = PDHLConfig(
+config = PeriodicMarketOrderConfig(
     instrument_id=InstrumentId.from_str(f"{symbol}.{MT5}"),
     bar_type=BarType.from_str(
-        f"{InstrumentId.from_str(f"{symbol}.{MT5}")}-15-MINUTE-BID-EXTERNAL"
+        f"{InstrumentId.from_str(f"{symbol}.{MT5}")}-1-MINUTE-BID-EXTERNAL"
     ),
-    trade_size=Decimal(10_000),
+    order_side=OrderSide.SELL,
+    order_quantity=Decimal("1000"),
+    order_interval_seconds=20,
 )
 
-strategy = PDHL(config=config)
+strategy = PeriodicMarketOrderStrategy(config=config)
 
 # Add the strategy to the node
 node.trader.add_strategy(strategy=strategy)

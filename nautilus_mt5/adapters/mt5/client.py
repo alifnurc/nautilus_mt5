@@ -17,8 +17,8 @@ from nautilus_trader.model.enums import (
 )
 from nautilus_trader.model.instruments import Cfd
 from pymt5linux import MetaTrader5
-from adapters.mt5.config import MT5ClientConfig
-from adapters.mt5.constants import MT5_VENUE
+from nautilus_mt5.adapters.mt5.config import MT5ClientConfig
+from nautilus_mt5.adapters.mt5 import MT5_VENUE
 from nautilus_trader.model import (
     Bar,
     BarType,

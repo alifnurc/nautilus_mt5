@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+
+[project]
+name = "nautilus_mt5"
+version = "1.1.0"
+description = "MetaTrader5 adapter for Nautilus Trader"
+authors = [{name = "Alif Nurcahyo", email = "alifnc@proton.me"}]
+classifiers = [
+
+]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.12, <=3.15"
+dependencies = [
+
+]
+
+[project.urls]
+homepage = "https://codeberg.org/hitagi/nautilus_mt5"
+repository = "https://codeberg.org/hitagi/nautilus_mt5"
+docs = "https://codeberg.org/hitagi/nautilus_mt5"
+
+[tool.setuptools.packages]
+find = {}

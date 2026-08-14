@@ -1,11 +1,11 @@
 import asyncio
 from functools import lru_cache
 
-from adapters.mt5.client import AsyncMT5RPyCClient
-from adapters.mt5.config import MT5ClientConfig
-from adapters.mt5.data import MT5DataClient
-from adapters.mt5.execution import MT5ExecutionClient
-from adapters.mt5.providers import MT5InstrumentProvider
+from nautilus_mt5.adapters.mt5.client import AsyncMT5RPyCClient
+from nautilus_mt5.adapters.mt5.config import MT5ClientConfig
+from nautilus_mt5.adapters.mt5.data import MT5DataClient
+from nautilus_mt5.adapters.mt5.execution import MT5ExecutionClient
+from nautilus_mt5.adapters.mt5.providers import MT5InstrumentProvider
 from nautilus_trader.common.component import LiveClock, MessageBus
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.config import InstrumentProviderConfig

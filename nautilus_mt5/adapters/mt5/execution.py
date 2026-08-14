@@ -1,10 +1,10 @@
 import asyncio
 from typing import Any
 
-from adapters.mt5.config import MT5ClientConfig
-from adapters.mt5.constants import MT5_VENUE
-from adapters.mt5.client import AsyncMT5RPyCClient
-from adapters.mt5.providers import MT5InstrumentProvider
+from nautilus_mt5.adapters.mt5.config import MT5ClientConfig
+from nautilus_mt5.adapters.mt5.constants import MT5_VENUE
+from nautilus_mt5.adapters.mt5.client import AsyncMT5RPyCClient
+from nautilus_mt5.adapters.mt5.providers import MT5InstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock, MessageBus
 from nautilus_trader.common.enums import LogColor, LogLevel

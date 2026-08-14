@@ -1,9 +1,8 @@
 from typing import Any, List
 
 from nautilus_trader.config import InstrumentProviderConfig
-
-from adapters.mt5.constants import MT5_VENUE
-from adapters.mt5.client import AsyncMT5RPyCClient
+from nautilus_mt5.adapters.mt5.constants import MT5_VENUE
+from nautilus_mt5.adapters.mt5.client import AsyncMT5RPyCClient
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
