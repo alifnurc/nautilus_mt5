@@ -39,9 +39,9 @@ from nautilus_trader.model.enums import (
     contingency_type_from_str,
     trigger_type_from_str,
 )
+from nautilus_trader.model.events import OrderAccepted, OrderRejected
 from nautilus_trader.model.identifiers import AccountId, ClientId
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import Order
 
 
 class MT5ExecutionClient(LiveExecutionClient):
@@ -284,7 +284,6 @@ class MT5ExecutionClient(LiveExecutionClient):
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
-        params = command.params
 
         if order.is_closed:
             self._log.warning(f"Cannot submit already closed order: {order}")
@@ -309,24 +308,6 @@ class MT5ExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        price = order.price if order.has_price else None
-        trigger_price = (
-            Price.from_str(str(order.trigger_price))
-            if order.has_trigger_price
-            else None
-        )
-        trigger_type = (
-            trigger_type_from_str(str(order.trigger_type))
-            if order.has_trigger_price and hasattr(order, "trigger_type")
-            else None
-        )
-        tp_price = params.get("take_profit")
-        sl_price = params.get("stop_loss")
-        display_qty = (
-            Quantity.from_str(str(order.display_qty))
-            if hasattr(order, "display_qty") and order.display_qty
-            else None
-        )
         contingency_type = None
         order_list_id = None
 
@@ -338,22 +319,8 @@ class MT5ExecutionClient(LiveExecutionClient):
 
         try:
             await self._client.submit_order(
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                order_side=order.side,
-                order_type=order.order_type,
-                quantity=order.quantity,
-                time_in_force=order.time_in_force,
-                price=price,
-                trigger_price=trigger_price,
-                trigger_type=trigger_type,
-                tp_price=tp_price,
-                sl_price=sl_price,
-                display_qty=display_qty,
-                post_only=order.is_post_only,
-                reduce_only=order.is_reduce_only,
-                order_list_id=order_list_id,
-                contingency_type=contingency_type,
+                command=command,
+                msg_handler=self._handle_order_msg,
             )
         except Exception as e:
             self.generate_order_rejected(
@@ -377,6 +344,17 @@ class MT5ExecutionClient(LiveExecutionClient):
                 params=command.params,
             )
             await self._submit_order(submit_command)
+
+    def _handle_order_msg(self, msg: Any) -> None:
+        try:
+            if isinstance(msg, OrderAccepted):
+                self._send_order_event(msg)
+            if isinstance(msg, OrderRejected):
+                self._send_order_event(msg)
+            else:
+                self._log.info(str(msg))
+        except Exception as e:
+            self._log.exception("Error handling message", e)
 
     async def _load_account_info(self) -> None:
         pass

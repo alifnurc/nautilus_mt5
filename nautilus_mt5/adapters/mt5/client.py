@@ -11,25 +11,25 @@ from nautilus_trader.model.enums import (
     BarAggregation,
     LiquiditySide,
     OrderSide,
-    OrderType,
     TimeInForce,
     asset_class_from_str,
 )
 from nautilus_trader.model.instruments import Cfd
 from pymt5linux import MetaTrader5
 from nautilus_mt5.adapters.mt5.config import MT5ClientConfig
-from nautilus_mt5.adapters.mt5 import MT5_VENUE
+from nautilus_mt5.adapters.mt5.constants import MT5_VENUE
 from nautilus_trader.model import (
     Bar,
     BarType,
-    ClientOrderId,
     Currency,
     InstrumentId,
     Money,
     Price,
     Quantity,
     Symbol,
+    VenueOrderId,
 )
+from nautilus_trader.model.events import OrderAccepted, OrderRejected
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock, Logger, MessageBus
 from nautilus_trader.common.enums import LogColor
@@ -322,30 +322,20 @@ class AsyncMT5RPyCClient:
 
     async def submit_order(
         self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        order_side: OrderSide,
-        order_type: OrderType,
-        quantity: Quantity,
-        time_in_force: TimeInForce,
-        price: Price,
-        trigger_price: Price,
-        trigger_type,
-        tp_price,
-        sl_price,
-        display_qty: Quantity,
-        post_only,
-        reduce_only,
-        order_list_id,
-        contingency_type,
+        command,
+        msg_handler,
     ):
         loop = asyncio.get_event_loop()
+        price = command.order.price if command.order.has_price else None
+        tp_price = command.params.get("take_profit")
+        sl_price = command.params.get("stop_loss")
+
         request = self._parse_order_request(
-            instrument_id=instrument_id,
-            order_side=order_side,
-            order_type=order_type,
-            quantity=quantity,
-            time_in_force=time_in_force,
+            instrument_id=command.order.instrument_id,
+            order_side=command.order.side,
+            order_type=command.order.order_type,
+            quantity=command.order.quantity,
+            time_in_force=command.order.time_in_force,
             price=price,
             tp_price=tp_price,
             sl_price=sl_price,
@@ -354,18 +344,49 @@ class AsyncMT5RPyCClient:
         self._log.debug(f"MT5_Order_request args: {request}")
 
         try:
-            mt5_order_request = await loop.run_in_executor(
+            mt5_order = await loop.run_in_executor(
                 self.executor, lambda: self.conn.order_send(request=request)
             )
 
-            if mt5_order_request.retcode == self.conn.TRADE_RETCODE_DONE:
-                self._cache.add(
-                    key=f"mt5_order-{client_order_id}", value=mt5_order_request
+            if mt5_order is None:
+                code, msg = self.conn.last_error()
+                raise RuntimeError(code, msg)
+
+            if mt5_order.retcode not in (
+                self.conn.TRADE_RETCODE_DONE,
+                self.conn.TRADE_RETCODE_DONE_PARTIAL,
+                self.conn.TRADE_RETCODE_PLACED,
+            ):
+                msg_handler(
+                    OrderRejected(
+                        trader_id=command.order.trader_id,
+                        strategy_id=command.order.strategy_id,
+                        instrument_id=command.order.instrument_id,
+                        client_order_id=command.order.client_order_id,
+                        account_id=command.order.account_id,
+                        reason=mt5_order.comment,
+                        event_id=UUID4(),
+                        ts_event=self._clock.timestamp_ns(),
+                        ts_init=self._clock.timestamp_ns(),
+                    )
                 )
-        except Exception as e:
-            self._log.error(
-                f"Failed to submit order: {e}, Venue last error: {self.conn.last_error()}"
+
+                return
+            msg_handler(
+                OrderAccepted(
+                    trader_id=command.order.trader_id,
+                    strategy_id=command.order.strategy_id,
+                    instrument_id=command.order.instrument_id,
+                    client_order_id=command.order.client_order_id,
+                    venue_order_id=VenueOrderId(str(mt5_order.order)),
+                    account_id=command.order.account_id,
+                    event_id=UUID4(),
+                    ts_event=self._clock.timestamp_ns(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
             )
+        except Exception as e:
+            self._log.error(f"Failed to submit order: {e}")
 
     def _get_timeframe(self, spec):
         step = spec.step
