@@ -121,13 +121,6 @@ class MT5ExecutionClient(LiveExecutionClient):
 
         self._log.info("MT5 RPyC authenticated", LogColor.GREEN)
 
-        # # Check MT5-Nautilus clock sync
-        server_time: int = await self._client.get_server_time()
-        self._log.info(f"MT5 server time {server_time} UNIX (ms)")
-
-        nautilus_time: int = self._clock.timestamp_ms()
-        self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
-
         self._log.info(
             f"Connected to RPyC {self._config.rpyc_host}:{self._config.rpyc_port}"
         )
