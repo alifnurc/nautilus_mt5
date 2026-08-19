@@ -1,67 +1,37 @@
 # Quantitative Trading
 
-This repository contains code and resources related to quantitative trading strategies, data analysis, and algorithmic trading. It includes implementations of various trading algorithms, backtesting frameworks, and tools for data visualization and analysis.
+Unofficial MetaTrader5 adapter for NautilusTrader.
 
-## Learning Milestones
+# What this is?
 
-- [x] Simple backtest strategy from builtin example with my own datatick from broker
-- [ ] Writing an adapter to start paper trading
-- [ ] Write my own ICT model strategy
-- [ ] Backtest a year of data
-- [ ] Start live trading with small cent account
-
-## Project structure
-
-```
-QuantNautilus
-├── CHANGELOG.md
-├── data # Data directory containing datatick and parquet
-│   └── dataticks
-│       ├── Exness_EURUSDc_2025_09.csv
-│       └── Exness_EURUSDc_2025_09.zip
-├── docker-compose.yml
-├── Dockerfile
-├── README.md
-├── requirements.txt
-└── src
-    ├── main.py # Backtest script
-    └── strategies # Strategies that use on backtest and live trading
-```
+nautilus_mt5 is a adapter for NautilusTrader that containt data and execution client for live trading and fetch data for backtest session.
 
 ## Prerequisites
 
 - Docker
 
-## Running with container
+# Quick Start
 
-- Docker
+## Installation
 
-```bash
-docker-compose up --build
-```
+git clone https://codeberg.org/hitagi/nautilus_mt5
+cd nautilus_mt5
+pip install -e .
 
-## Running without container
+## Initialization
 
-1. Clone this repository
+1. Create a .env file in your project root. You can see example in examples/.env.example
+2. Run the MetaTrader5 platform with docker
+3. Open localhost:60832/vnc.html for access to MetaTrader5 platform throught noVNC
+4. Find your server name in MetaTrader5 platform
+5. Enable AutoTrading
+6. Test the connection with test/test_pymt5linux.py
+7. Now the MetaTrader5 platform is ready to use for live or backtest session
 
-```bash
-git clone <this repository>
-```
+## Backtest
 
-2. Navigate to the project directory
+You can see example in examples/backtest for more information
 
-```bash
-cd <this repo>
-```
+## Live
 
-3. Install the required Python packages
-
-```bash
-pip install -r requirements.txt
-```
-
-4. Run the backtest
-
-```bash
-python3 src/main.py
-```
+You can see example in examples/live for more information
