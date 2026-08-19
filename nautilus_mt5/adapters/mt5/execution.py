@@ -159,9 +159,9 @@ class MT5ExecutionClient(LiveExecutionClient):
         account_state = {
             "balances": [
                 AccountBalance(
-                    total=Money(pyo3_account_state.get("balance"), currency),
-                    locked=Money(pyo3_account_state.get("margin"), currency),
-                    free=Money(pyo3_account_state.get("margin_free"), currency),
+                    total=Money(pyo3_account_state.get("equity"), currency),
+                    locked=Money(pyo3_account_state.get("profit"), currency),
+                    free=Money(pyo3_account_state.get("balance"), currency),
                 )
             ],
             "margins": [
