@@ -27,9 +27,10 @@ from nautilus_trader.model import (
     Price,
     Quantity,
     Symbol,
+    TradeId,
     VenueOrderId,
 )
-from nautilus_trader.model.events import OrderAccepted, OrderRejected
+from nautilus_trader.model.events import OrderAccepted, OrderFilled, OrderRejected
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock, Logger, MessageBus
 from nautilus_trader.common.enums import LogColor
@@ -385,6 +386,49 @@ class AsyncMT5RPyCClient:
                     ts_init=self._clock.timestamp_ns(),
                 )
             )
+
+            if request.get("action") is self.conn.TRADE_ACTION_DEAL:
+                msg_handler(
+                    OrderFilled(
+                        trader_id=command.order.trader_id,
+                        strategy_id=command.order.strategy_id,
+                        instrument_id=command.order.instrument_id,
+                        client_order_id=command.order.client_order_id,
+                        venue_order_id=VenueOrderId(str(mt5_order.order)),
+                        account_id=command.order.account_id,
+                        trade_id=TradeId(str(mt5_order.order)),
+                        position_id=None,
+                        order_side=command.order.side,
+                        order_type=command.order.order_type,
+                        last_qty=Quantity(
+                            mt5_order.volume
+                            * self._cache.instrument(
+                                command.order.instrument_id
+                            ).lot_size,
+                            0,
+                        ),
+                        last_px=Price(
+                            mt5_order.price,
+                            self._cache.instrument(
+                                command.order.instrument_id
+                            ).price_precision,
+                        ),
+                        currency=self._cache.instrument(
+                            command.order.instrument_id
+                        ).base_currency,
+                        commission=Money(
+                            0,
+                            self._cache.instrument(
+                                command.order.instrument_id
+                            ).base_currency,
+                        ),
+                        liquidity_side=LiquiditySide.TAKER,
+                        event_id=UUID4(),
+                        ts_event=self._clock.timestamp_ns(),
+                        ts_init=self._clock.timestamp_ns(),
+                        info=None,
+                    )
+                )
         except Exception as e:
             self._log.error(f"Failed to submit order: {e}")
 

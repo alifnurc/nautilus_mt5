@@ -39,7 +39,7 @@ from nautilus_trader.model.enums import (
     contingency_type_from_str,
     trigger_type_from_str,
 )
-from nautilus_trader.model.events import OrderAccepted, OrderRejected
+from nautilus_trader.model.events import OrderAccepted, OrderFilled, OrderRejected
 from nautilus_trader.model.identifiers import AccountId, ClientId
 from nautilus_trader.model.objects import Quantity
 
@@ -349,10 +349,12 @@ class MT5ExecutionClient(LiveExecutionClient):
         try:
             if isinstance(msg, OrderAccepted):
                 self._send_order_event(msg)
-            if isinstance(msg, OrderRejected):
+            elif isinstance(msg, OrderRejected):
+                self._send_order_event(msg)
+            elif isinstance(msg, OrderFilled):
                 self._send_order_event(msg)
             else:
-                self._log.info(str(msg))
+                self._log.warning(f"Received unhandled message type: {type(msg)}")
         except Exception as e:
             self._log.exception("Error handling message", e)
 
