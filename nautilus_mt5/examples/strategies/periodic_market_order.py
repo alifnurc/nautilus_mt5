@@ -70,8 +70,6 @@ class PeriodicMarketOrderStrategy(Strategy):
                 f"Position opened: {self.position.side} @ {self.position.avg_px_open}"
             )
 
-            # Place stop-loss and take-profit
-            self.place_exit_orders()
         elif isinstance(event, PositionClosed):
             if self.position and self.position.id == event.position_id:
                 pnl = self.position.realized_pnl
@@ -88,8 +86,12 @@ class PeriodicMarketOrderStrategy(Strategy):
         current_price = self.last_bar.close
         pip_size = instrument.price_increment * 10
 
-        tp_price = current_price + (pip_size * 15)
-        sl_price = current_price - (pip_size * 5)
+        if self.order_side is OrderSide.BUY:
+            tp_price = current_price + (pip_size * 15)
+            sl_price = current_price - (pip_size * 5)
+        else:
+            tp_price = current_price - (pip_size * 15)
+            sl_price = current_price + (pip_size * 5)
 
         order = self.order_factory.market(
             instrument_id=self.instrument_id,
@@ -105,37 +107,6 @@ class PeriodicMarketOrderStrategy(Strategy):
         self.log.info(
             f"Submitted order price: {current_price}, TP: {tp_price} and SL: {sl_price}"
         )
-
-    def place_exit_orders(self):
-        if not self.position:
-            return
-
-        entry_price = float(self.position.avg_px_open)
-        pip_value = 0.0001
-
-        if self.position.side == PositionSide.LONG:
-            stop_price = entry_price - (10 * pip_value)
-            target_price = entry_price + (20 * pip_value)
-
-            stop_loss = self.order_factory.stop_market(
-                instrument_id=self.instrument_id,
-                order_side=OrderSide.SELL,
-                quantity=self.order_quantity,
-                trigger_price=Price.from_str(f"{stop_price:.5f}"),
-            )
-            self.submit_order(stop_loss)
-
-            take_profit = self.order_factory.limit(
-                instrument_id=self.instrument_id,
-                order_side=OrderSide.SELL,
-                quantity=self.order_quantity,
-                trigger_price=Price.from_str(f"{stop_price:.5f}"),
-            )
-            self.submit_order(take_profit)
-
-            self.log.info(
-                f"Placed LONG exit orders - Stop: {stop_price:.5f}, Target: {target_price:.5f}"
-            )
 
     def on_stop(self):
         self.clock.cancel_timer("periodic_order_timer")
