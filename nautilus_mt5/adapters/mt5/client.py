@@ -11,6 +11,7 @@ from nautilus_trader.model.enums import (
     BarAggregation,
     LiquiditySide,
     OrderSide,
+    OrderType,
     TimeInForce,
     asset_class_from_str,
 )
@@ -24,13 +25,21 @@ from nautilus_trader.model import (
     Currency,
     InstrumentId,
     Money,
+    PositionId,
     Price,
     Quantity,
     Symbol,
     TradeId,
     VenueOrderId,
 )
-from nautilus_trader.model.events import OrderAccepted, OrderFilled, OrderRejected
+from nautilus_trader.model.orders import Order
+from nautilus_trader.model.events import (
+    OrderAccepted,
+    OrderCanceled,
+    OrderExpired,
+    OrderFilled,
+    OrderRejected,
+)
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock, Logger, MessageBus
 from nautilus_trader.common.enums import LogColor
@@ -197,8 +206,10 @@ class AsyncMT5RPyCClient:
         except Exception as e:
             self._log.error(f"Failed to request bars: {e}")
 
-    async def subscribe_orders(self):
-        self._subscription["orders"] = asyncio.create_task(self._orders_stream_loop())
+    async def subscribe_orders(self, msg_handler):
+        self._subscription["orders"] = asyncio.create_task(
+            self._orders_stream_loop(msg_handler)
+        )
 
     async def subscribe_executions(self):
         self._subscription["executions"] = asyncio.create_task(
@@ -243,22 +254,54 @@ class AsyncMT5RPyCClient:
         except Exception as e:
             self._log.error(f"Failed to subscribe bars: {e}")
 
-    async def _orders_stream_loop(self):
+    async def _orders_stream_loop(self, msg_handler):
         loop = asyncio.get_event_loop()
-
-        topic = f"events.order"
 
         try:
             while True:
+                nautilus_orders = self._cache.orders_open(venue=MT5_VENUE) or []
                 mt5_orders = await loop.run_in_executor(
                     self.executor, self.conn.orders_get
                 )
+                mt5_orders_set = (
+                    {str(o.ticket) for o in mt5_orders} if mt5_orders else set()
+                )
 
-                if mt5_orders is not None:
-                    orders: list = []
-                    for i in range(len(mt5_orders)):
-                        orders.append(self._parse_mt5_order(mt5_order=mt5_orders[i]))
-                    self._msgbus.publish(topic, orders)
+                for order in nautilus_orders:
+                    if order.venue_order_id.value not in (mt5_orders_set):
+                        order_history = self.conn.history_orders_get(
+                            ticket=int(order.venue_order_id.value)
+                        )[0]
+                        if order_history is not None:
+                            order_state = order_history.state
+
+                            if order_state is self.conn.ORDER_STATE_FILLED:
+                                order_deal = self.conn.history_deals_get(
+                                    position=int(order.venue_order_id.value)
+                                )[0]
+                                msg_handler(
+                                    self._generate_order_filled(
+                                        order=order,
+                                        venue_msg=order_deal,
+                                    )
+                                )
+                            elif order_state is self.conn.ORDER_STATE_CANCELED:
+                                msg_handler(
+                                    self._generate_order_canceled(
+                                        order=order,
+                                        venue_msg=order_history,
+                                    )
+                                )
+                            elif order_state is self.conn.ORDER_STATE_EXPIRED:
+                                msg_handler(
+                                    self._generate_order_expired(
+                                        order=order,
+                                        venue_msg=order_history,
+                                    )
+                                )
+                            else:
+                                self._log.warning(f"Unknown order state: {order_state}")
+                await asyncio.sleep(1)
         except Exception as e:
             self._log.error(f"Failed to subscribe orders: {e}")
 
@@ -327,16 +370,17 @@ class AsyncMT5RPyCClient:
         msg_handler,
     ):
         loop = asyncio.get_event_loop()
-        price = command.order.price if command.order.has_price else None
+        order = command.order
+        price = order.price if order.has_price else None
         tp_price = command.params.get("take_profit")
         sl_price = command.params.get("stop_loss")
 
         request = self._parse_order_request(
-            instrument_id=command.order.instrument_id,
-            order_side=command.order.side,
-            order_type=command.order.order_type,
-            quantity=command.order.quantity,
-            time_in_force=command.order.time_in_force,
+            instrument_id=order.instrument_id,
+            order_side=order.side,
+            order_type=order.order_type,
+            quantity=order.quantity,
+            time_in_force=order.time_in_force,
             price=price,
             tp_price=tp_price,
             sl_price=sl_price,
@@ -359,76 +403,14 @@ class AsyncMT5RPyCClient:
                 self.conn.TRADE_RETCODE_PLACED,
             ):
                 msg_handler(
-                    OrderRejected(
-                        trader_id=command.order.trader_id,
-                        strategy_id=command.order.strategy_id,
-                        instrument_id=command.order.instrument_id,
-                        client_order_id=command.order.client_order_id,
-                        account_id=command.order.account_id,
-                        reason=mt5_order.comment,
-                        event_id=UUID4(),
-                        ts_event=self._clock.timestamp_ns(),
-                        ts_init=self._clock.timestamp_ns(),
-                    )
+                    self._generate_order_rejected(order=order, venue_msg=mt5_order)
                 )
 
                 return
+            order_history = self.conn.history_orders_get(ticket=mt5_order.order)[0]
             msg_handler(
-                OrderAccepted(
-                    trader_id=command.order.trader_id,
-                    strategy_id=command.order.strategy_id,
-                    instrument_id=command.order.instrument_id,
-                    client_order_id=command.order.client_order_id,
-                    venue_order_id=VenueOrderId(str(mt5_order.order)),
-                    account_id=command.order.account_id,
-                    event_id=UUID4(),
-                    ts_event=self._clock.timestamp_ns(),
-                    ts_init=self._clock.timestamp_ns(),
-                )
+                self._generate_order_accepted(order=order, venue_msg=order_history)
             )
-
-            if request.get("action") is self.conn.TRADE_ACTION_DEAL:
-                msg_handler(
-                    OrderFilled(
-                        trader_id=command.order.trader_id,
-                        strategy_id=command.order.strategy_id,
-                        instrument_id=command.order.instrument_id,
-                        client_order_id=command.order.client_order_id,
-                        venue_order_id=VenueOrderId(str(mt5_order.order)),
-                        account_id=command.order.account_id,
-                        trade_id=TradeId(str(mt5_order.order)),
-                        position_id=None,
-                        order_side=command.order.side,
-                        order_type=command.order.order_type,
-                        last_qty=Quantity(
-                            mt5_order.volume
-                            * self._cache.instrument(
-                                command.order.instrument_id
-                            ).lot_size,
-                            0,
-                        ),
-                        last_px=Price(
-                            mt5_order.price,
-                            self._cache.instrument(
-                                command.order.instrument_id
-                            ).price_precision,
-                        ),
-                        currency=self._cache.instrument(
-                            command.order.instrument_id
-                        ).base_currency,
-                        commission=Money(
-                            0,
-                            self._cache.instrument(
-                                command.order.instrument_id
-                            ).base_currency,
-                        ),
-                        liquidity_side=LiquiditySide.TAKER,
-                        event_id=UUID4(),
-                        ts_event=self._clock.timestamp_ns(),
-                        ts_init=self._clock.timestamp_ns(),
-                        info=None,
-                    )
-                )
         except Exception as e:
             self._log.error(f"Failed to submit order: {e}")
 
@@ -602,9 +584,6 @@ class AsyncMT5RPyCClient:
         if time_inforce is TimeInForce.GTD:
             return self.conn.ORDER_TIME_SPECIFIED_DAY
 
-    def _parse_mt5_order(self, mt5_order):
-        return
-
     def _parse_mt5_deals_to_fill_report(self, mt5_deal):
         instrument_id = InstrumentId(Symbol(mt5_deal[15]), MT5_VENUE)
         instrument = self._cache.instrument(instrument_id)
@@ -625,6 +604,94 @@ class AsyncMT5RPyCClient:
             ts_init=mt5_deal[2] * 1e9,
             client_order_id=None,
             venue_position_id=mt5_deal[7],
+        )
+
+    def _generate_order_accepted(self, order: Order, venue_msg) -> OrderAccepted:
+        return OrderAccepted(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId(str(venue_msg.ticket)),
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=venue_msg.time_done * 1e9,
+            ts_init=venue_msg.time_setup * 1e9,
+        )
+
+    def _generate_order_canceled(self, order: Order, venue_msg) -> OrderCanceled:
+        return OrderCanceled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId(str(venue_msg.ticket)),
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=venue_msg.time_done * 1e9,
+            ts_init=venue_msg.time_setup * 1e9,
+        )
+
+    def _generate_order_expired(self, order: Order, venue_msg) -> OrderExpired:
+        return OrderExpired(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId(str(venue_msg.ticket)),
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=venue_msg.time_done * 1e9,
+            ts_init=venue_msg.time_setup * 1e9,
+        )
+
+    def _generate_order_rejected(self, order: Order, venue_msg) -> OrderRejected:
+        return OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            account_id=order.account_id,
+            reason=venue_msg.comment,
+            event_id=UUID4(),
+            ts_event=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+    def _generate_order_filled(self, order: Order, venue_msg) -> OrderFilled:
+        return OrderFilled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId(str(venue_msg.order)),
+            account_id=order.account_id,
+            trade_id=TradeId(str(venue_msg.ticket)),
+            position_id=PositionId(str(venue_msg.position_id)),
+            order_side=order.side,
+            order_type=order.order_type,
+            last_qty=Quantity(
+                venue_msg.volume * self._cache.instrument(order.instrument_id).lot_size,
+                0,
+            ),
+            last_px=Price(
+                venue_msg.price,
+                self._cache.instrument(order.instrument_id).price_precision,
+            ),
+            currency=self._cache.instrument(order.instrument_id).base_currency,
+            commission=Money(
+                venue_msg.commission,
+                self._cache.instrument(order.instrument_id).base_currency,
+            ),
+            liquidity_side=(
+                LiquiditySide.MAKER
+                if order.order_type is OrderType.LIMIT
+                else LiquiditySide.TAKER
+            ),
+            event_id=UUID4(),
+            ts_event=venue_msg.time * 1e9,
+            ts_init=venue_msg.time * 1e9,
+            info=None,
         )
 
     def account_info(self):
