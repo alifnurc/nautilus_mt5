@@ -31,7 +31,7 @@ pip install -e .
    Disabled:
    ![disabled AutoTrading](examples/.img/disabled_auto_trading.png "Disabled AutoTrading")
    Enabled:
-   ![enabled AutoTrading](examples/.img/enabled_autotrading.png "Enabled AutoTrading")
+   ![enabled AutoTrading](examples/.img/enabled_auto_trading.png "Enabled AutoTrading")
 6. Test the terminal connection with [this file](test/terminal_connection.py) from your project root
 7. Now the MetaTrader5 platform is ready to use for live or backtest session
 
