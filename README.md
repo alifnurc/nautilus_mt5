@@ -42,8 +42,8 @@ pip install -e .
 
 ## Backtest
 
-You can see [example](examples/backtest) for more information
+You can see [example](examples/backtest/README.md) for more information
 
 ## Live
 
-You can see [example](examples/live) for more information
+You can see [example](examples/live/README.md) for more information
