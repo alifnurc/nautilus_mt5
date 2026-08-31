@@ -1,15 +1,4 @@
 services:
-  backtest:
-    build:
-      context: .
-      dockerfile: backtest.dockerfile
-    volumes:
-      - ./src:/app/src
-      - ./data:/app/data
-    working_dir: /app
-    environment:
-      - PYTHONPATH=/app/src
-    command: python src/backtest.py
   mt5-wine:
     build:
       context: .

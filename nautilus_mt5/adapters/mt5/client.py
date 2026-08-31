@@ -126,17 +126,6 @@ class AsyncMT5RPyCClient:
             self.shutdown,
         )
 
-    async def get_server_time(self) -> int:
-        loop = asyncio.get_event_loop()
-        try:
-            symbol_info_tick = await loop.run_in_executor(
-                self.executor, lambda: self.conn.symbol_info_tick("EURUSD")
-            )
-
-            return symbol_info_tick.time * 1000
-        except Exception as e:
-            self._log.error(f"Failed to get server time: {e}")
-
     async def request_instruments(self, active_only) -> Cfd:
         loop = asyncio.get_event_loop()
         try:

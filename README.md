@@ -1,67 +1,49 @@
 # Quantitative Trading
 
-This repository contains code and resources related to quantitative trading strategies, data analysis, and algorithmic trading. It includes implementations of various trading algorithms, backtesting frameworks, and tools for data visualization and analysis.
+Unofficial MetaTrader5 adapter for NautilusTrader.
 
-## Learning Milestones
+# What this is?
 
-- [x] Simple backtest strategy from builtin example with my own datatick from broker
-- [ ] Writing an adapter to start paper trading
-- [ ] Write my own ICT model strategy
-- [ ] Backtest a year of data
-- [ ] Start live trading with small cent account
-
-## Project structure
-
-```
-QuantNautilus
-├── CHANGELOG.md
-├── data # Data directory containing datatick and parquet
-│   └── dataticks
-│       ├── Exness_EURUSDc_2025_09.csv
-│       └── Exness_EURUSDc_2025_09.zip
-├── docker-compose.yml
-├── Dockerfile
-├── README.md
-├── requirements.txt
-└── src
-    ├── main.py # Backtest script
-    └── strategies # Strategies that use on backtest and live trading
-```
+nautilus_mt5 is a adapter for NautilusTrader that containt data and execution client for live trading and fetch data for backtest session.
 
 ## Prerequisites
 
 - Docker
 
-## Running with container
+# Quick Start
 
-- Docker
-
-```bash
-docker-compose up --build
-```
-
-## Running without container
-
-1. Clone this repository
+## Installation
 
 ```bash
-git clone <this repository>
+git clone https://codeberg.org/hitagi/nautilus_mt5
+cd nautilus_mt5
+pip install -e .
 ```
 
-2. Navigate to the project directory
+## Initialization
 
-```bash
-cd <this repo>
-```
+1. Create a `.env` file in your project root. You can see [example](examples/.env.example)
+2. Run the MetaTrader5 platform with docker, simply with `docker compose up mt5-wine -d` from this repo
+3. Open `localhost:60832/vnc.html` from your browser to access MetaTrader5 platform throught noVNC
+4. Find your server name in MetaTrader5 platform:
+   ![find server](examples/.img/find_broker_server.png "Find Broker Server")
+5. Enable AutoTrading
 
-3. Install the required Python packages
+   Disabled:
 
-```bash
-pip install -r requirements.txt
-```
+   ![disabled AutoTrading](examples/.img/disabled_auto_trading.png "Disabled AutoTrading")
 
-4. Run the backtest
+   Enabled:
 
-```bash
-python3 src/main.py
-```
+   ![enabled AutoTrading](examples/.img/enabled_auto_trading.png "Enabled AutoTrading")
+
+6. Test the terminal connection with `test/terminal_connection.py` from your project root
+7. Now the MetaTrader5 platform is ready to use for live or backtest session
+
+## Backtest
+
+You can see [example](examples/backtest/README.md) for more information
+
+## Live
+
+You can see [example](examples/live/README.md) for more information
