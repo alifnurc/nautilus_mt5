@@ -135,7 +135,7 @@ class MT5ExecutionClient(LiveExecutionClient):
             # TODO:
             await self._client.subscribe_orders(msg_handler=self._handle_order_msg)
             # await self._client.subscribe_executions()
-            # await self._client.subscribe_positions()
+            await self._client.subscribe_positions(msg_handler=self._handle_order_msg)
             # await self._client.subscribe_margin()
             # await self._client.subscribe_wallet()
         except Exception as e:
@@ -189,7 +189,7 @@ class MT5ExecutionClient(LiveExecutionClient):
         try:
             await self._client.unsubscribe_orders()
             # await self._client.unsubscribe_executions()
-            # await self._client.unsubscribe_positions()
+            await self._client.unsubscribe_positions()
             # await self._client.unsubscribe_margin()
             # await self._client.unsubscribe_wallet()
         except Exception as e:

@@ -144,23 +144,6 @@ class AsyncMT5RPyCClient:
         except Exception as e:
             self._log.error(f"Failed to get instruments: {e}")
 
-    async def subscribe_bars(self, bar_type: BarType):
-        if bar_type in self._subscription:
-            return
-
-        self._subscription[bar_type] = asyncio.create_task(
-            self._bar_stream_loop(bar_type=bar_type)
-        )
-
-    async def unsubscribe_bars(self, bar_type: BarType):
-        try:
-            if bar_type not in self._subscription:
-                return
-
-            self._subscription.pop(bar_type).cancel()
-        except Exception as e:
-            self._log.error(f"Failed to unsubscribe bars: {e}")
-
     async def request_bars(self, bar_type, start, end, limit, partial) -> list[Bar]:
         loop = asyncio.get_event_loop()
 
@@ -195,6 +178,14 @@ class AsyncMT5RPyCClient:
         except Exception as e:
             self._log.error(f"Failed to request bars: {e}")
 
+    async def subscribe_bars(self, bar_type: BarType):
+        if bar_type in self._subscription:
+            return
+
+        self._subscription[bar_type] = asyncio.create_task(
+            self._bar_stream_loop(bar_type=bar_type)
+        )
+
     async def subscribe_orders(self, msg_handler):
         self._subscription["orders"] = asyncio.create_task(
             self._orders_stream_loop(msg_handler)
@@ -205,6 +196,20 @@ class AsyncMT5RPyCClient:
             self._executions_stream_loop()
         )
 
+    async def subscribe_positions(self, msg_handler):
+        self._subscription["positions"] = asyncio.create_task(
+            self._positions_stream_loop(msg_handler)
+        )
+
+    async def unsubscribe_bars(self, bar_type: BarType):
+        try:
+            if bar_type not in self._subscription:
+                return
+
+            self._subscription.pop(bar_type).cancel()
+        except Exception as e:
+            self._log.error(f"Failed to unsubscribe bars: {e}")
+
     async def unsubscribe_orders(self):
         try:
             self._subscription.pop("orders").cancel()
@@ -214,6 +219,12 @@ class AsyncMT5RPyCClient:
     async def unsubscribe_executions(self):
         try:
             self._subscription.pop("executions").cancel()
+        except Exception as e:
+            self._log.error(f"Failed to unsubscribe executions: {e}")
+
+    async def unsubscribe_positions(self):
+        try:
+            self._subscription.pop("positions").cancel()
         except Exception as e:
             self._log.error(f"Failed to unsubscribe executions: {e}")
 
@@ -324,6 +335,28 @@ class AsyncMT5RPyCClient:
                 await asyncio.sleep(1)
         except Exception as e:
             self._log.error(f"Failed to subscribe orders: {e}")
+
+    async def _positions_stream_loop(self, msg_handler):
+        loop = asyncio.get_event_loop()
+
+        try:
+            while True:
+                nautilus_positions = self._cache.positions_open(venue=MT5_VENUE) or []
+                mt5_positions = await loop.run_in_executor(
+                        self.executor, self.conn.positions_get
+                        )
+                mt5_positions_set = {str(o.ticket) for o in mt5_positions} if mt5_positions else set()
+
+                for position in nautilus_positions:
+                    if position.position_id.value not in (mt5_positions_set):
+                        order_deal = self.conn.history_deals_get(
+                                position=int(position.position_id.value)
+                                )[-1]
+                        if order_deal.entry is self.conn.DEAL_ENTRY_OUT:
+                            msg_handler()
+                await asyncio.sleep(1)
+        except Exception as e:
+            self._log.error(f"Failed to subscribe positions: {e}")
 
     async def request_order_status_reports(
         self, instrument_id: InstrumentId, open_only, limit
