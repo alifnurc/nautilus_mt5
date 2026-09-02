@@ -67,7 +67,7 @@ class PeriodicMarketOrderStrategy(Strategy):
         if isinstance(event, PositionOpened):
             self.position = self.cache.position(event.position_id)
             self.log.info(
-                f"Position opened: {self.position.side} @ {self.position.avg_px_open}"
+                f"Position opened: {self.position.side.name} @ {self.position.avg_px_open}"
             )
 
         elif isinstance(event, PositionClosed):
